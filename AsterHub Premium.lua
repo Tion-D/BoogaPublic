@@ -2128,7 +2128,7 @@ uiCorner(sidebar, UI.Radius.lg)
 uiStroke(sidebar, 1, 0.65)
 
 sidebarTitle = Instance.new("TextLabel", sidebar)
-sidebarTitle.Text = "ASSTER HUB CRACKED"
+sidebarTitle.Text = "JordonHub"
 sidebarTitle.Size = UDim2.new(1, -16, 0, 22)
 sidebarTitle.Position = UDim2.fromOffset(14, 12)
 sidebarTitle.Font = UI.FontTitle
@@ -2138,7 +2138,7 @@ sidebarTitle.TextXAlignment = Enum.TextXAlignment.Left
 applyHollowEffect(sidebarTitle, 1.2, true)
 
 sidebarSub = Instance.new("TextLabel", sidebar)
-sidebarSub.Text = "BY BLOOMWARE"
+sidebarSub.Text = "Holy Script"
 sidebarSub.Size = UDim2.new(1, -16, 0, 14)
 sidebarSub.Position = UDim2.fromOffset(14, 34)
 sidebarSub.Font = UI.FontLabel
