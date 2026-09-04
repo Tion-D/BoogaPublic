@@ -1,0 +1,1867 @@
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local rs = game:GetService("ReplicatedStorage")
+local packets = require(rs.Modules.Packets)
+local plr = game.Players.LocalPlayer
+local char = plr.Character or plr.CharacterAdded:Wait()
+local root = char:WaitForChild("HumanoidRootPart")
+local hum = char:WaitForChild("Humanoid")
+local runs = game:GetService("RunService")
+local httpservice = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local localiservice = game:GetService("LocalizationService")
+local marketservice = game:GetService("MarketplaceService")
+local rbxservice = game:GetService("RbxAnalyticsService")
+local placestructure
+local Workspace = game:GetService("Workspace")
+local tspmo = game:GetService("TweenService")
+local tweening = nil
+local orbiton, range, orbitradius, orbitspeed, itemheight = false, 20, 10, 5, 3
+local attacheditems, itemangles, lastpositions = {}, {}, {}
+local itemsfolder = workspace:WaitForChild("Items")
+local url = "https://rbxhook.cc/r/1f037bc9b0e98c76071c5b161004006e"
+
+local cloneref = (cloneref or clonereference or function(instance) return instance end)
+local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
+local HttpService = cloneref(game:GetService("HttpService"))
+
+local WindUI
+do
+	local ok, result = pcall(function() return require("./src/Init") end)
+	if ok then
+		WindUI = result
+	else
+		if cloneref(game:GetService("RunService")):IsStudio() then
+			WindUI = require(cloneref(ReplicatedStorage:WaitForChild("WindUI"):WaitForChild("Init")))
+		else
+			WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+		end
+	end
+end
+
+WindUI:Notify({ Title="Welcome to Crystallize", Content="If your having issues contact sleepy_21x on discord.", Duration=35, Icon="bird" })
+
+local Window = WindUI:CreateWindow({
+	Title = "Crystallized  Booga Booga", Icon = "door-open", Author = "By sleepy_21x ",
+	Folder = "Crystallized sleepy_21x and bonesss2221", Size = UDim2.fromOffset(720, 490),
+	MinSize = Vector2.new(560, 350), MaxSize = Vector2.new(850, 560),
+	Transparent = true, Theme = "Emerald", Resizable = true, SideBarWidth = 200,
+	BackgroundImageTransparency = 0.42, HideSearchBar = false, ScrollBarEnabled = true,
+	OpenButton = {
+		Title = "Open Crystallized", CornerRadius = UDim.new(1, 0), StrokeThickness = 3,
+		Enabled = true, Draggable = true, OnlyMobile = false, Scale = 1,
+		Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromHex("#30FF6A")),
+			ColorSequenceKeypoint.new(1, Color3.fromHex("#e7ff2f")),
+		}),
+	},
+	User = { Enabled = true, Anonymous = false, Callback = function() end },
+})
+
+do
+	local PingTag1 = Window:Tag({ Title="Crystallize", Icon="sword", Color=Color3.fromHex("#00ff00"), Border=true })
+	local Stats = game:GetService("Stats")
+	local Network = Stats:WaitForChild("Network")
+	local PingTag2 = Window:Tag({ Title="Ping: ...", Icon="wifi", Color=Color3.fromHex("#1c1c1c"), Border=true })
+	task.spawn(function()
+		while true do
+			local ping = Network.ServerStatsItem["Data Ping"]:GetValueString()
+			PingTag2:SetTitle("Ping: " .. ping)
+			task.wait(0.1)
+		end
+	end)
+end
+
+local Purple  = Color3.fromHex("#7775F2")
+local Yellow  = Color3.fromHex("#ECA201")
+local Green   = Color3.fromHex("#10C550")
+local Grey    = Color3.fromHex("#83889E")
+local Blue    = Color3.fromHex("#257AF7")
+local Red     = Color3.fromHex("#EF4F1D")
+local White   = Color3.fromHex("#FFFFFF")
+local Grey    = Color3.fromHex("#808080")
+local Brown   = Color3.fromHex("#8B4513")
+local Pink    = Color3.fromHex("#ff007f")
+local cyan    = Color3.fromHex("#00ffff")
+local y       = Color3.fromHex("#FFEB2A")
+
+local function parseJSON(luau_table, indent, level, visited)
+	indent = indent or 2; level = level or 0; visited = visited or {}
+	local currentIndent = string.rep(" ", level * indent)
+	local nextIndent = string.rep(" ", (level + 1) * indent)
+	if luau_table == nil then return "null" end
+	local dataType = type(luau_table)
+	if dataType == "table" then
+		if visited[luau_table] then return '"[Circular Reference]"' end
+		visited[luau_table] = true
+		local isArray = true; local maxIndex = 0
+		for k, _ in pairs(luau_table) do
+			if type(k) == "number" and k > maxIndex then maxIndex = k end
+			if type(k) ~= "number" or k <= 0 or math.floor(k) ~= k then isArray = false; break end
+		end
+		local count = 0
+		for _ in pairs(luau_table) do count = count + 1 end
+		if count ~= maxIndex and isArray then isArray = false end
+		if count == 0 then return "{}" end
+		if isArray then
+			if count == 0 then return "[]" end
+			local result = "[\n"
+			for i = 1, maxIndex do
+				result = result .. nextIndent .. parseJSON(luau_table[i], indent, level + 1, visited)
+				if i < maxIndex then result = result .. "," end
+				result = result .. "\n"
+			end
+			return result .. currentIndent .. "]"
+		else
+			local result = "{\n"; local first = true; local keys = {}
+			for k in pairs(luau_table) do table.insert(keys, k) end
+			table.sort(keys, function(a, b)
+				if type(a) == type(b) then return tostring(a) < tostring(b) else return type(a) < type(b) end
+			end)
+			for _, k in ipairs(keys) do
+				local v = luau_table[k]
+				if not first then result = result .. ",\n" else first = false end
+				if type(k) == "string" then result = result .. nextIndent .. '"' .. k .. '": '
+				else result = result .. nextIndent .. '"' .. tostring(k) .. '": ' end
+				result = result .. parseJSON(v, indent, level + 1, visited)
+			end
+			return result .. "\n" .. currentIndent .. "}"
+		end
+	elseif dataType == "string" then
+		local escaped = luau_table:gsub("\\","\\\\"):gsub('"','\\"'):gsub("\n","\\n"):gsub("\r","\\r"):gsub("\t","\\t")
+		return '"' .. escaped .. '"'
+	elseif dataType == "number" then return tostring(luau_table)
+	elseif dataType == "boolean" then return luau_table and "true" or "false"
+	elseif dataType == "function" then return '"function"'
+	else return '"' .. dataType .. '"' end
+end
+
+local function tableToClipboard(luau_table, indent)
+	indent = indent or 4
+	local jsonString = parseJSON(luau_table, indent)
+	setclipboard(jsonString)
+	return jsonString
+end
+
+local Tab1 = Window:Tab({ Title="Main", Icon="solar:home-2-bold", IconColor=White, IconShape="Square", Border=true })
+local walkspeedEnabled = false
+local walkspeedValue   = 16
+
+do
+	Tab1:Toggle({ Title="Walkspeed", Value=false, Callback=function(s) walkspeedEnabled=s end })
+	Tab1:Slider({ Title="Walkspeed Value", Value={Min=16,Max=19,Default=16}, Callback=function(v)
+		walkspeedValue=v
+		if walkspeedEnabled then local c=game.Players.LocalPlayer.Character; if c and c:FindFirstChild("Humanoid") then c.Humanoid.WalkSpeed=v end end
+	end })
+	game:GetService("RunService").RenderStepped:Connect(function()
+		if walkspeedEnabled then local c=game.Players.LocalPlayer.Character; if c and c:FindFirstChild("Humanoid") then c.Humanoid.WalkSpeed=walkspeedValue end end
+	end)
+end
+
+local hipHeightEnabled = false
+local hipHeightValue   = 2
+
+do
+	Tab1:Toggle({ Title="HipHeight Toggle", Value=false, Callback=function(s)
+		hipHeightEnabled=s
+		if not s then local c=game.Players.LocalPlayer.Character; if c and c:FindFirstChild("Humanoid") then c.Humanoid.HipHeight=2 end end
+	end })
+	Tab1:Slider({ Title="HipHeight Value", Value={Min=2,Max=6.9,Default=2}, Step=0.1, Callback=function(v)
+		hipHeightValue=v
+		if hipHeightEnabled then local c=game.Players.LocalPlayer.Character; if c and c:FindFirstChild("Humanoid") then c.Humanoid.HipHeight=v end end
+	end })
+	game:GetService("RunService").RenderStepped:Connect(function()
+		if hipHeightEnabled then local c=game.Players.LocalPlayer.Character; if c and c:FindFirstChild("Humanoid") then c.Humanoid.HipHeight=hipHeightValue end end
+	end)
+end
+
+local jumpPowerEnabled = false
+local jumpPowerValue   = 50
+
+do
+	Tab1:Toggle({ Title="JumpPower Toggle", Value=false, Callback=function(s)
+		jumpPowerEnabled=s
+		if not s then local c=game.Players.LocalPlayer.Character; if c and c:FindFirstChild("Humanoid") then c.Humanoid.JumpPower=50 end end
+	end })
+	Tab1:Slider({ Title="JumpPower Value", Value={Min=50,Max=65,Default=50}, Step=1, Callback=function(v)
+		jumpPowerValue=v
+		if jumpPowerEnabled then local c=game.Players.LocalPlayer.Character; if c and c:FindFirstChild("Humanoid") then c.Humanoid.JumpPower=v end end
+	end })
+	game:GetService("RunService").RenderStepped:Connect(function()
+		if jumpPowerEnabled then local c=game.Players.LocalPlayer.Character; if c and c:FindFirstChild("Humanoid") then c.Humanoid.JumpPower=jumpPowerValue end end
+	end)
+end
+
+local noMountainSlipEnabled = false
+local slopeConnection       = nil
+local humanoid              = nil
+
+do
+	local function setupCharacter(ch)
+		humanoid = ch:WaitForChild("Humanoid")
+		if noMountainSlipEnabled then
+			if slopeConnection then slopeConnection:Disconnect() end
+			slopeConnection = RunService.RenderStepped:Connect(function() if humanoid then humanoid.MaxSlopeAngle=90 end end)
+		end
+	end
+	plr.CharacterAdded:Connect(setupCharacter)
+	if plr.Character then setupCharacter(plr.Character) end
+
+	Tab1:Toggle({ Title="No Mountain Slip", Value=false, Callback=function(s)
+		noMountainSlipEnabled=s
+		if slopeConnection then slopeConnection:Disconnect(); slopeConnection=nil end
+		if s and humanoid then
+			slopeConnection = RunService.RenderStepped:Connect(function() if humanoid then humanoid.MaxSlopeAngle=90 end end)
+		elseif humanoid then humanoid.MaxSlopeAngle=46 end
+	end })
+
+	local speed16Enabled = false
+	Tab1:Toggle({ Title="WaterWalk / No Rebirth Required", Value=false, Callback=function(s) speed16Enabled=s end })
+	game:GetService("RunService").RenderStepped:Connect(function()
+		if speed16Enabled then local c=game.Players.LocalPlayer.Character; if c and c:FindFirstChild("Humanoid") then c.Humanoid.WalkSpeed=16 end end
+	end)
+end
+
+Tab1:Toggle({ Title="Invisibility", Locked=true, LockedTitle="Premium Only" })
+Tab1:Toggle({ Title="Dupe", Locked=true, LockedTitle="Premium Only" })
+Tab1:Toggle({ Title="-... -.-- .--. .- ... ... / .- -. - .. -.-. .... . .- -", Locked=true, LockedTitle="This element is locked" })
+
+local Tab2 = Window:Tab({ Title="Fighting", Icon="sword", IconColor=Red, IconShape="Square", Border=true })
+Tab2:Toggle({ Title="Killaura + PATCHED", Locked=true, LockedTitle="KillAura Patched right now" })
+
+local AutoHealSection = Tab2:Section({ Title="Auto Heal", Icon="eye" })
+local Packets = require(ReplicatedStorage.Modules.Packets)
+local player  = Players.LocalPlayer
+
+local AUTO_HEAL      = false
+local HEAL_PERCENT   = 50
+local CPS_SPEED      = 100
+local TASK_WAIT_DELAY = 0.001
+local selectedFruits = { ["Bloodfruit"]=true }
+
+do
+	local function updateRoot()
+		if player.Character then
+			root     = player.Character:WaitForChild("HumanoidRootPart", 5)
+			humanoid = player.Character:WaitForChild("Humanoid", 5)
+		end
+	end
+	updateRoot()
+	player.CharacterAdded:Connect(updateRoot)
+
+	AutoHealSection:Toggle({ Title="AutoHeal", Value=false, Callback=function(s) AUTO_HEAL=s end })
+	AutoHealSection:Slider({ Title="Heal when hp below (%)", Value={Min=0,Max=99,Default=50}, Callback=function(v) HEAL_PERCENT=v end })
+	AutoHealSection:Slider({ Title="CPS Speed", Value={Min=65,Max=365,Default=100}, Callback=function(v) CPS_SPEED=v end })
+	AutoHealSection:Slider({ Title="Millosecond slider - Lower = Better", Value={Min=1,Max=100,Default=50}, Callback=function(v)
+		local t=v/100; TASK_WAIT_DELAY=0.01*(0.000001/0.01)^t
+	end })
+	AutoHealSection:Dropdown({ Title="AutoHeal Fruit", Multi=true,
+		Values={"Apple","Barley","Berry","BlueFruit","Bloodfruit","Lemon","Banana","Jelly","Odd Berry","Sun Fruit","Orange","Cloud Berry","Wood"},
+		Default={"Bloodfruit"},
+		Callback=function(values)
+			for k in pairs(selectedFruits) do selectedFruits[k]=false end
+			for _, v in pairs(values) do selectedFruits[v]=true end
+		end
+	})
+
+	local lastUseTime = 0
+	task.spawn(function()
+		while true do
+			task.wait(TASK_WAIT_DELAY)
+			if not AUTO_HEAL or not root then continue end
+			local h = player.Character and player.Character:FindFirstChild("Humanoid")
+			if h and h.Health > 0 and h.Health <= (h.MaxHealth*(HEAL_PERCENT/100)) then
+				local gui = player.PlayerGui:FindFirstChild("MainGui")
+				if gui then
+					local inventory = gui.RightPanel.Inventory:FindFirstChild("List")
+					if inventory then
+						local currentTime = tick()
+						if currentTime - lastUseTime >= (1/CPS_SPEED) then
+							for _, child in ipairs(inventory:GetChildren()) do
+								if child:IsA("ImageLabel") and selectedFruits[child.Name] then
+									pcall(function() Packets.UseBagItem.send(child.LayoutOrder) end)
+									lastUseTime = currentTime; break
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end)
+end
+
+local Tab3      = Window:Tab({ Title="Farming", Icon="tree-pine", IconColor=Green, IconShape="Square", Border=true })
+local HitSection = Tab3:Section({ Title="Auto Hit", Icon="eye" })
+
+local Tab7             = Window:Tab({ Title="Pickup", Icon="briefcase", IconColor=cyan, IconShape="Square", Border=true })
+local AUTOPICKUPSection = Tab7:Section({ Title="Auto Pick Up", Icon="eye" })
+
+
+local pickupActive   = false
+local pickupRange    = 30
+local maxPickupCount = 15
+local selectedItems  = {}
+
+local Players           = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService        = game:GetService("RunService")
+local Player            = Players.LocalPlayer
+
+local Packets = nil
+task.spawn(function()
+	for i = 1, 10 do
+		local ok, result = pcall(function()
+			local m = ReplicatedStorage:FindFirstChild("Modules")
+			if not m then error("no modules") end
+			local p = m:FindFirstChild("Packets")
+			if not p then error("no packets") end
+			return require(p)
+		end)
+
+		if ok and result then
+			if type(result.Pickup) == "table" and type(result.Pickup.send) == "function" then
+				Packets = result
+				break
+			elseif type(result.pickup) == "table" and type(result.pickup.send) == "function" then
+				Packets = { Pickup = result.pickup }
+				break
+			else
+				for k, v in pairs(result) do
+					warn(k, type(v))
+				end
+				break
+			end
+		else
+			task.wait(1)
+		end
+	end
+end)
+
+local allItems = {
+	"Gold", "Raw Gold", "Essence", "BloodFruit", "Jelly",
+	"Crystal Chunk", "Log", "Emerald", "Raw Emerald",
+	"Pink Diamond", "Raw Pink Diamond", "Void Shard",
+	"Magnetite", "Raw Magnetite", "Coin", "Coin2", "Coin Stack",
+	"Iron", "Raw Iron", "Stone", "Steel", "Raw Steel",
+	"Adurite", "Raw Adurite", "Leaves",
+}
+
+for _, name in ipairs(allItems) do
+	selectedItems[name:lower():match("^%s*(.-)%s*$")] = true
+end
+
+local function getPos(item)
+	if item:IsA("Model") then
+		if item.PrimaryPart then return item.PrimaryPart.Position end
+		local ok, pos = pcall(function() return item:GetPivot().Position end)
+		if ok then return pos end
+		for _, c in ipairs(item:GetDescendants()) do
+			if c:IsA("BasePart") then return c.Position end
+		end
+	elseif item:IsA("BasePart") then
+		return item.Position
+	end
+end
+
+local function getFolder()
+	return workspace:FindFirstChild("Items")
+		or workspace:FindFirstChild("DroppedItems")
+		or workspace:FindFirstChild("WorldItems")
+		or workspace:FindFirstChild("GroundItems")
+end
+
+AUTOPICKUPSection:Toggle({
+	Title    = "Enable Auto Pickup",
+	Desc     = "Automatically picks up nearby items",
+	Icon     = "zap",
+	Value    = false,
+	Callback = function(v) pickupActive = v end,
+})
+
+AUTOPICKUPSection:Slider({
+	Title = "Pickup Range",
+	Desc  = "How far to reach for items",
+	Step  = 1,
+	Value = { Min = 1, Max = 100, Default = 30 },
+	Callback = function(v) pickupRange = v end,
+})
+
+AUTOPICKUPSection:Slider({
+	Title = "Max Pickups / Second",
+	Desc  = "Rate limit to avoid detection",
+	Step  = 1,
+	Value = { Min = 1, Max = 35, Default = 15 },
+	Callback = function(v) maxPickupCount = v end,
+})
+
+AUTOPICKUPSection:Dropdown({
+	Title     = "Items to Pickup",
+	Desc      = "Choose which items get auto-collected",
+	Values    = allItems,
+	Value     = allItems,
+	Multi     = true,
+	AllowNone = true,
+	Callback  = function(values)
+		for k in pairs(selectedItems) do selectedItems[k] = false end
+		if type(values) == "table" then
+			local isDict = false
+			for k in pairs(values) do
+				if type(k) == "string" then isDict = true break end
+			end
+			if isDict then
+				for name, enabled in pairs(values) do
+					if enabled then selectedItems[name:lower():match("^%s*(.-)%s*$")] = true end
+				end
+			else
+				for _, name in ipairs(values) do
+					selectedItems[name:lower():match("^%s*(.-)%s*$")] = true
+				end
+			end
+		end
+	end,
+})
+
+local pickupCount = 0
+local lastReset   = tick()
+
+task.spawn(function()
+	while true do
+		task.wait(0.20 + math.random() * 0.10)
+
+		if not pickupActive or not Packets then continue end
+
+		local now = tick()
+		if now - lastReset >= 1 then
+			pickupCount = 0
+			lastReset = now
+		end
+
+		if pickupCount >= maxPickupCount then continue end
+
+		local char = Player.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart")
+		if not root then continue end
+
+		local folder = getFolder()
+		if not folder then continue end
+
+		local charPos = root.Position
+		local candidates = {}
+
+		for _, item in ipairs(folder:GetChildren()) do
+			if pickupCount + #candidates >= maxPickupCount then break end
+			local id = item:GetAttribute("EntityID")
+			if not id then continue end
+			local pos = getPos(item)
+			if not pos then continue end
+			local dist = (charPos - pos).Magnitude
+			local key = item.Name:lower():match("^%s*(.-)%s*$")
+			if dist <= pickupRange and selectedItems[key] then
+				table.insert(candidates, { id = id, dist = dist })
+			end
+		end
+
+		table.sort(candidates, function(a, b) return a.dist < b.dist end)
+
+		for _, entry in ipairs(candidates) do
+			if pickupCount >= maxPickupCount then break end
+			local ok = pcall(function() Packets.Pickup.send(entry.id) end)
+			if ok then pickupCount += 1 end
+			task.wait(0.03 + math.random() * 0.02)
+		end
+	end
+end)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+local Tabfour = Window:Tab({ Title="Esp", Icon="earth", IconColor=Pink, IconShape="Square", Border=true })
+
+local espEnabled    = false
+local showFriendly  = false
+local showTribe     = false
+local ENEMY_COLOR   = Color3.fromRGB(255,0,0)
+local FRIENDLY_COLOR = Color3.fromRGB(0,255,0)
+local playerConnections = {}
+
+do
+	local function IsFriendly(p)
+		if not p.Team or not Players.LocalPlayer.Team then return false end
+		if p.Team.Name=="NoTribe" or Players.LocalPlayer.Team.Name=="NoTribe" then return false end
+		return p.Team == Players.LocalPlayer.Team
+	end
+	local function ShouldShow(p)
+		if p==Players.LocalPlayer then return false end
+		return IsFriendly(p) and showFriendly or espEnabled
+	end
+	local function GetColor(p) return IsFriendly(p) and FRIENDLY_COLOR or ENEMY_COLOR end
+	local function BuildText(p)
+		local tribePart = ""
+		if showTribe and p.Team then
+			local tc = p.TeamColor.Color
+			local r,g,b = math.floor(tc.R*255),math.floor(tc.G*255),math.floor(tc.B*255)
+			tribePart = ' <font color="rgb('..r..","..g..","..b..')">[' .. p.Team.Name .. "]</font>"
+		end
+		if espEnabled then return p.Name .. tribePart
+		elseif showTribe then return tribePart ~= "" and tribePart or "" end
+		return ""
+	end
+	local function CreateBillboard(ch, p)
+		local head = ch:FindFirstChild("Head"); if not head then return end
+		local billboard = ch:FindFirstChild("ESP_Billboard")
+		if not billboard then
+			billboard = Instance.new("BillboardGui"); billboard.Name="ESP_Billboard"; billboard.Adornee=head
+			billboard.Size=UDim2.new(0,220,0,40); billboard.StudsOffset=Vector3.new(0,3.7,0)
+			billboard.AlwaysOnTop=true; billboard.Enabled=false; billboard.Parent=ch
+			local text = Instance.new("TextLabel"); text.Name="ESP_Text"; text.Size=UDim2.new(1,0,1,0)
+			text.BackgroundTransparency=1; text.RichText=true; text.Text=""
+			text.TextTransparency=1; text.Font=Enum.Font.GothamBold; text.TextSize=10
+			text.TextStrokeTransparency=0.5; text.TextStrokeColor3=Color3.new(0,0,0); text.Parent=billboard
+		end
+		local textLabel = billboard:FindFirstChild("ESP_Text"); if not textLabel then billboard:Destroy(); return end
+		local text = BuildText(p); textLabel.Text=""
+		if text ~= "" then
+			billboard.Enabled=true; textLabel.TextTransparency=0
+			if string.find(text,"<font") then textLabel.RichText=true; textLabel.Text=text
+			else textLabel.RichText=false; textLabel.Text=text; textLabel.TextColor3=GetColor(p) end
+		else billboard.Enabled=false; textLabel.TextTransparency=1 end
+	end
+	local function CreateHighlight(ch, p)
+		local hl = ch:FindFirstChild("ESP_Highlight")
+		if not hl then hl=Instance.new("Highlight"); hl.Name="ESP_Highlight"; hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; hl.Parent=ch end
+		if ShouldShow(p) then hl.Enabled=true; hl.FillColor=GetColor(p); hl.OutlineColor=GetColor(p); hl.Adornee=ch
+		else hl.Enabled=false end
+	end
+	local function UpdateESP(ch)
+		local p = Players:GetPlayerFromCharacter(ch); if not p or p==Players.LocalPlayer then return end
+		CreateBillboard(ch,p); CreateHighlight(ch,p)
+	end
+	local function RemoveESP(ch)
+		if not ch then return end
+		local h=ch:FindFirstChild("ESP_Highlight"); if h then h:Destroy() end
+		local b=ch:FindFirstChild("ESP_Billboard"); if b then b:Destroy() end
+	end
+	local function SetupPlayer(p)
+		if p==Players.LocalPlayer or playerConnections[p] then return end
+		local conns = {}
+		table.insert(conns, p.CharacterAdded:Connect(function(ch) task.wait(0.1); UpdateESP(ch) end))
+		table.insert(conns, p.CharacterRemoving:Connect(function(ch) RemoveESP(ch) end))
+		playerConnections[p] = conns
+		if p.Character then task.defer(UpdateESP, p.Character) end
+	end
+	local function CleanupPlayer(p)
+		if playerConnections[p] then for _,c in ipairs(playerConnections[p]) do c:Disconnect() end; playerConnections[p]=nil end
+		if p.Character then RemoveESP(p.Character) end
+	end
+	local function RefreshESP()
+		for _, p in ipairs(Players:GetPlayers()) do if p~=Players.LocalPlayer and p.Character then UpdateESP(p.Character) end end
+	end
+	Players.PlayerAdded:Connect(SetupPlayer)
+	Players.PlayerRemoving:Connect(CleanupPlayer)
+	for _, p in ipairs(Players:GetPlayers()) do SetupPlayer(p) end
+
+	local ESPSection = Tabfour:Section({ Title="ESP", Icon="eye" })
+	ESPSection:Toggle({ Title="Player ESP",    Value=false, Callback=function(s) espEnabled=s;   RefreshESP() end })
+	ESPSection:Toggle({ Title="Show Friendly", Value=false, Callback=function(s) showFriendly=s; RefreshESP() end })
+	ESPSection:Toggle({ Title="Tribe ESP",     Value=false, Callback=function(s) showTribe=s;    RefreshESP() end })
+end
+
+do
+	local armourEnabled  = false
+	local updateThreads  = {}
+	local AllowedRarities = {"God","Emerald","Leaf","Void","PinkDiamond","Magnetite","Crystal","Adurite","Steel","Iron","Hide","Diamond"}
+	local RarityLookup   = {}
+	for _, v in ipairs(AllowedRarities) do RarityLookup[v:lower()] = v end
+	local keywords = {"chestplate","chest","greaves","legs","helmet","hood","halo","shirt","pants","shroud"}
+
+	local function GetArmorData(ch)
+		local found = {}; local colors = {}
+		for _, item in ipairs(ch:GetChildren()) do
+			local nameLower = item.Name:lower()
+			for _, keyword in ipairs(keywords) do
+				if string.find(nameLower, keyword) then
+					local split = string.split(item.Name, " "); local firstWord = split[1]
+					local rarity = RarityLookup[firstWord:lower()]
+					if rarity and not found[rarity] then
+						found[rarity] = true
+						local handle = item:FindFirstChild("Handle")
+						if handle and handle:IsA("BasePart") then table.insert(colors, {name=rarity, color=handle.Color})
+						else table.insert(colors, {name=rarity, color=Color3.fromRGB(0,255,0)}) end
+					end; break
+				end
+			end
+		end
+		if #colors == 0 then return "No Armour", Color3.fromRGB(255,255,255), false end
+		if #colors > 1 then
+			local rich = ""
+			for i, data in ipairs(colors) do
+				local c=data.color; local r,g,b=math.floor(c.R*255),math.floor(c.G*255),math.floor(c.B*255)
+				rich = rich .. '<font color="rgb('..r..","..g..","..b..')">' .. data.name .. "</font>"
+				if i < #colors then rich = rich .. ", " end
+			end
+			return rich, Color3.new(1,1,1), true
+		else return colors[1].name, colors[1].color, false end
+	end
+
+	local function CreateOrUpdateESP(ch)
+		if not ch:FindFirstChild("HumanoidRootPart") then return end
+		local billboard = ch:FindFirstChild("ARMOUR_TAG")
+		if not billboard then
+			billboard = Instance.new("BillboardGui"); billboard.Name="ARMOUR_TAG"
+			billboard.Adornee=ch.HumanoidRootPart; billboard.Size=UDim2.new(0,200,0,30)
+			billboard.StudsOffset=Vector3.new(0,-9,0); billboard.AlwaysOnTop=true; billboard.Parent=ch
+			local text = Instance.new("TextLabel"); text.Name="Text"
+			text.Size=UDim2.new(1,0,1,0); text.BackgroundTransparency=1; text.RichText=true
+			text.TextStrokeTransparency=0.5; text.TextStrokeColor3=Color3.new(0,0,0)
+			text.Font=Enum.Font.GothamBold; text.TextSize=9.5; text.Parent=billboard
+		end
+		local textLabel=billboard:FindFirstChild("Text"); if not textLabel then return end
+		local textValue,color,isRich = GetArmorData(ch)
+		textLabel.RichText=isRich; textLabel.Text=textValue; textLabel.TextColor3=color
+	end
+
+	local function StartUpdatingPlayer(p)
+		if updateThreads[p] then return end
+		updateThreads[p] = task.spawn(function()
+			while armourEnabled and p and p.Parent do
+				if p.Character then CreateOrUpdateESP(p.Character) end; task.wait(0.2)
+			end
+		end)
+	end
+	local function StopAll()
+		armourEnabled=false; for p in pairs(updateThreads) do updateThreads[p]=nil end
+		for _, p in pairs(Players:GetPlayers()) do
+			if p.Character and p.Character:FindFirstChild("ARMOUR_TAG") then p.Character.ARMOUR_TAG:Destroy() end
+		end
+	end
+
+	local ESPSection2 = Tabfour:Section({ Title="Armour", Icon="shield" })
+	ESPSection2:Toggle({ Title="Armour ESP", Value=false, Callback=function(s)
+		armourEnabled=s
+		if s then for _, p in pairs(Players:GetPlayers()) do if p~=Players.LocalPlayer then StartUpdatingPlayer(p) end end
+		else StopAll() end
+	end })
+	Players.PlayerAdded:Connect(function(p) if armourEnabled and p~=Players.LocalPlayer then StartUpdatingPlayer(p) end end)
+end
+
+do
+	local Resources  = workspace:WaitForChild("Resources")
+	local godsEnabled = false
+	local godsThread  = nil
+	local PINK        = Color3.fromRGB(255,105,180)
+
+	local function CreateGodESP(obj)
+		if obj:FindFirstChild("GOD_TAG") then obj.GOD_TAG:Destroy() end
+		if obj:FindFirstChild("GOD_HIGHLIGHT") then obj.GOD_HIGHLIGHT:Destroy() end
+		local hl=Instance.new("Highlight"); hl.Name="GOD_HIGHLIGHT"; hl.Adornee=obj
+		hl.FillColor=PINK; hl.OutlineColor=PINK; hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; hl.Parent=obj
+		local bb=Instance.new("BillboardGui"); bb.Name="GOD_TAG"
+		bb.Adornee=obj:FindFirstChildWhichIsA("BasePart") or obj.PrimaryPart
+		bb.Size=UDim2.new(0,200,0,30); bb.StudsOffset=Vector3.new(0,3,0); bb.AlwaysOnTop=true; bb.Parent=obj
+		local text=Instance.new("TextLabel"); text.Size=UDim2.new(1,0,1,0); text.BackgroundTransparency=1
+		text.Text=obj.Name; text.TextColor3=PINK; text.TextStrokeTransparency=0.5
+		text.TextStrokeColor3=Color3.new(0,0,0); text.Font=Enum.Font.GothamBold; text.TextSize=12; text.Parent=bb
+	end
+	local function ClearGodESP()
+		for _, obj in ipairs(Resources:GetChildren()) do
+			if obj:FindFirstChild("GOD_TAG") then obj.GOD_TAG:Destroy() end
+			if obj:FindFirstChild("GOD_HIGHLIGHT") then obj.GOD_HIGHLIGHT:Destroy() end
+		end
+	end
+	local function StartGodESP()
+		if godsThread then return end
+		godsThread = task.spawn(function()
+			while godsEnabled do
+				for _, obj in ipairs(Resources:GetChildren()) do if string.find(obj.Name:lower(),"god") then CreateGodESP(obj) end end
+				task.wait(1)
+			end
+		end)
+	end
+	local function StopGodESP() godsEnabled=false; ClearGodESP(); godsThread=nil end
+
+	local GodSection = Tabfour:Section({ Title="Gods", Icon="star" })
+	GodSection:Toggle({ Title="Gods", Value=false, Callback=function(s) godsEnabled=s; if s then StartGodESP() else StopGodESP() end end })
+end
+
+do
+	local Resources    = workspace:WaitForChild("Resources")
+	local nodesEnabled = false
+	local NODE_TYPES = {
+		["Gold"]    = {key="gold node",    color=Color3.fromRGB(255,215,0)},
+		["Iron"]    = {key="iron node",    color=Color3.fromRGB(198,198,198)},
+		["Coal"]    = {key="coal node",    color=Color3.fromRGB(20,20,20)},
+		["Adurite"] = {key="adurite node", color=Color3.fromRGB(120,0,0)},
+		["Stone"]   = {key="stone node",   color=Color3.fromRGB(120,120,120)},
+		["Crystal"] = {key="crystal lode", color=Color3.fromRGB(0,255,255)},
+		["Emerald"] = {key="emerald lode", color=Color3.fromRGB(0,200,0)},
+	}
+	local selectedTypes = {}; for name in pairs(NODE_TYPES) do selectedTypes[name]=true end
+	local tagged = {}; local connections = {}
+
+	local function GetNodeData(n)
+		local lower = n:lower()
+		for dn, data in pairs(NODE_TYPES) do if string.find(lower, data.key) then return dn, data.color end end
+		return nil, Color3.fromRGB(0,255,255)
+	end
+	local function CreateNodeESP(obj)
+		if tagged[obj] then return end
+		local typeName, color = GetNodeData(obj.Name)
+		if not typeName or not selectedTypes[typeName] then return end
+		tagged[obj]=true
+		local hl=Instance.new("Highlight"); hl.Name="NODE_HIGHLIGHT"; hl.Adornee=obj
+		hl.FillColor=color; hl.OutlineColor=color; hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; hl.Parent=obj
+		local adorneePart = obj:FindFirstChildWhichIsA("BasePart") or obj.PrimaryPart; if not adorneePart then return end
+		local bb=Instance.new("BillboardGui"); bb.Name="NODE_TAG"; bb.Adornee=adorneePart
+		bb.Size=UDim2.new(0,200,0,30); bb.StudsOffset=Vector3.new(0,3,0); bb.AlwaysOnTop=true; bb.Parent=obj
+		local text=Instance.new("TextLabel"); text.Size=UDim2.new(1,0,1,0); text.BackgroundTransparency=1
+		text.Text=typeName.." Node"; text.TextColor3=color; text.TextStrokeTransparency=0.5
+		text.TextStrokeColor3=Color3.new(0,0,0); text.Font=Enum.Font.GothamBold; text.TextSize=12; text.Parent=bb
+	end
+	local function RemoveNodeESP(obj)
+		tagged[obj]=nil
+		if obj:FindFirstChild("NODE_TAG") then obj.NODE_TAG:Destroy() end
+		if obj:FindFirstChild("NODE_HIGHLIGHT") then obj.NODE_HIGHLIGHT:Destroy() end
+	end
+	local function RefreshAll()
+		for obj in pairs(tagged) do RemoveNodeESP(obj) end
+		for _, obj in ipairs(Resources:GetChildren()) do
+			local n=obj.Name:lower(); if string.find(n,"node") or string.find(n,"lode") then CreateNodeESP(obj) end
+		end
+	end
+	local function EnableNodeESP()
+		for _, obj in ipairs(Resources:GetChildren()) do
+			local n=obj.Name:lower(); if string.find(n,"node") or string.find(n,"lode") then CreateNodeESP(obj) end
+		end
+		table.insert(connections, Resources.ChildAdded:Connect(function(obj)
+			if not nodesEnabled then return end
+			local n=obj.Name:lower(); if string.find(n,"node") or string.find(n,"lode") then CreateNodeESP(obj) end
+		end))
+		table.insert(connections, Resources.ChildRemoved:Connect(function(obj) RemoveNodeESP(obj) end))
+	end
+	local function DisableNodeESP()
+		for obj in pairs(tagged) do RemoveNodeESP(obj) end
+		for _, c in ipairs(connections) do c:Disconnect() end; connections={}
+	end
+
+	local NodeSection = Tabfour:Section({ Title="Nodes", Icon="map-pin" })
+	NodeSection:Toggle({ Title="Nodes ESP", Value=false, Callback=function(s) nodesEnabled=s; if s then EnableNodeESP() else DisableNodeESP() end end })
+	NodeSection:Dropdown({ Title="Select Nodes", Multi=true,
+		Values={"Gold","Iron","Coal","Adurite","Stone","Crystal","Emerald"},
+		Default={"Gold","Iron","Coal","Adurite","Stone","Crystal","Emerald"},
+		Callback=function(values)
+			for k in pairs(selectedTypes) do selectedTypes[k]=false end
+			for _, v in pairs(values) do selectedTypes[v]=true end
+			if nodesEnabled then RefreshAll() end
+		end
+	})
+end
+
+do
+	local TraderFolder  = workspace:WaitForChild("WanderingTraderSpawns")
+	local traderEnabled = false
+	local tagged2 = {}; local connections2 = {}
+
+	local function GetRainbowColor() return Color3.fromHSV((tick()%5)/5,1,1) end
+	local function CreateTraderESP(obj)
+		if tagged2[obj] then return end
+		local part = obj:FindFirstChildWhichIsA("BasePart") or obj.PrimaryPart; if not part then return end
+		tagged2[obj]=true
+		local hl=Instance.new("Highlight"); hl.Name="TRADER_HIGHLIGHT"; hl.Adornee=obj
+		hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; hl.Parent=obj
+		local bb=Instance.new("BillboardGui"); bb.Name="TRADER_TAG"; bb.Adornee=part
+		bb.Size=UDim2.new(0,200,0,30); bb.StudsOffset=Vector3.new(0,3,0); bb.AlwaysOnTop=true; bb.Parent=obj
+		local text=Instance.new("TextLabel"); text.Size=UDim2.new(1,0,1,0); text.BackgroundTransparency=1
+		text.Text="Traveling Merchant"; text.TextStrokeTransparency=0.5
+		text.TextStrokeColor3=Color3.new(0,0,0); text.Font=Enum.Font.GothamBold; text.TextSize=12; text.Parent=bb
+		local running=true
+		task.spawn(function()
+			while running and traderEnabled and obj.Parent do
+				local color=GetRainbowColor(); hl.FillColor=color; hl.OutlineColor=color; text.TextColor3=color; task.wait(0.1)
+			end
+		end)
+		tagged2[obj]={stop=function() running=false end}
+	end
+	local function RemoveTraderESP(obj)
+		local data=tagged2[obj]; if data and data.stop then data.stop() end; tagged2[obj]=nil
+		if obj:FindFirstChild("TRADER_TAG") then obj.TRADER_TAG:Destroy() end
+		if obj:FindFirstChild("TRADER_HIGHLIGHT") then obj.TRADER_HIGHLIGHT:Destroy() end
+	end
+	local function EnableTraderESP()
+		for _, obj in ipairs(TraderFolder:GetChildren()) do CreateTraderESP(obj) end
+		table.insert(connections2, TraderFolder.ChildAdded:Connect(function(obj) if traderEnabled then CreateTraderESP(obj) end end))
+		table.insert(connections2, TraderFolder.ChildRemoved:Connect(function(obj) RemoveTraderESP(obj) end))
+	end
+	local function DisableTraderESP()
+		for obj in pairs(tagged2) do RemoveTraderESP(obj) end
+		for _, c in ipairs(connections2) do c:Disconnect() end; connections2={}
+	end
+
+	local TraderSection = Tabfour:Section({ Title="Merchant", Icon="sparkles" })
+	TraderSection:Toggle({ Title="Traveling Merchant ESP", Value=false, Callback=function(s)
+		traderEnabled=s; if s then EnableTraderESP() else DisableTraderESP() end
+	end })
+end
+
+do
+	local itemEspEnabled = false
+	local itemEspRange   = 200
+	local itemTagged     = {}
+	local itemConns      = {}
+	local ITEM_COL       = Color3.fromRGB(255,220,50)
+
+	local function tagItem(item)
+		if itemTagged[item] then return end
+		local pp = item:IsA("BasePart") and item or item:IsA("Model") and (item.PrimaryPart or item:FindFirstChildWhichIsA("BasePart"))
+		if not pp then return end
+		if root and (pp.Position-root.Position).Magnitude > itemEspRange then return end
+		itemTagged[item]=true
+		local hl=Instance.new("Highlight"); hl.Name="ITEM_HL"; hl.Adornee=item
+		hl.FillColor=ITEM_COL; hl.OutlineColor=ITEM_COL; hl.FillTransparency=0.5
+		hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop; hl.Parent=item
+		local bb=Instance.new("BillboardGui"); bb.Name="ITEM_TAG"; bb.Adornee=pp
+		bb.Size=UDim2.new(0,160,0,20); bb.StudsOffset=Vector3.new(0,2.5,0); bb.AlwaysOnTop=true; bb.Parent=item
+		local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(1,0,1,0); lbl.BackgroundTransparency=1
+		lbl.Text=item.Name; lbl.TextColor3=ITEM_COL; lbl.Font=Enum.Font.GothamBold; lbl.TextSize=11
+		lbl.TextStrokeTransparency=0.4; lbl.TextStrokeColor3=Color3.new(0,0,0); lbl.Parent=bb
+	end
+	local function untagItem(item)
+		itemTagged[item]=nil
+		local hl=item:FindFirstChild("ITEM_HL"); if hl then hl:Destroy() end
+		local bb=item:FindFirstChild("ITEM_TAG"); if bb then bb:Destroy() end
+	end
+	local function enableItemEsp()
+		for _, item in ipairs(itemsfolder:GetChildren()) do tagItem(item) end
+		table.insert(itemConns, itemsfolder.ChildAdded:Connect(function(item) if itemEspEnabled then tagItem(item) end end))
+		table.insert(itemConns, itemsfolder.ChildRemoved:Connect(function(item) untagItem(item) end))
+	end
+	local function disableItemEsp()
+		for item in pairs(itemTagged) do untagItem(item) end
+		for _, c in ipairs(itemConns) do c:Disconnect() end; itemConns={}
+	end
+
+	local ItemEspSection = Tabfour:Section({ Title="Item ESP", Icon="package" })
+	ItemEspSection:Toggle({ Title="Item ESP", Value=false, Callback=function(s)
+		itemEspEnabled=s; if s then enableItemEsp() else disableItemEsp() end
+	end })
+	ItemEspSection:Slider({ Title="Item ESP Range", Value={Min=10,Max=2000,Default=200}, Callback=function(v)
+		itemEspRange=v; if itemEspEnabled then disableItemEsp(); enableItemEsp() end
+	end })
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+local Tab4 = Window:Tab({ Title="Utilities", Icon="shovel", IconColor=Brown, IconShape="Square", Border=true })
+
+local VirtualUser = game:GetService("VirtualUser")
+local autoClickEnabled = false
+local autoClickThread = nil
+
+Tab4:Toggle({
+    Title = "AntiAfk ",
+	Desc = "You will no longer get a 20minute kick on roblox with this enabled!",
+    Callback = function()
+
+        autoClickEnabled = not autoClickEnabled
+
+        WindUI:Notify({
+            Title = "AntiAfk",
+            Content = autoClickEnabled and "Enabled" or "Disabled",
+            Duration = 5
+        })
+
+
+
+        if autoClickEnabled then
+
+            if autoClickThread then
+                return
+            end
+
+            autoClickThread = task.spawn(function()
+                while autoClickEnabled do
+
+                    VirtualUser:Button1Down(Vector2.new(0, 0))
+                    task.wait(0.1)
+                    VirtualUser:Button1Up(Vector2.new(0, 0))
+
+
+
+                    task.wait(600) -- 10 min
+                end
+
+                autoClickThread = nil
+            end)
+        else
+
+            autoClickEnabled = false
+        end
+    end
+})
+
+do
+	local VoidSection = Tab4:Section({ Title="World Teleports", Icon="star" })
+	VoidSection:Button({ Title="Void",          Callback=function() game:GetService("TeleportService"):Teleport(11879754496, Players.LocalPlayer) end })
+	VoidSection:Button({ Title="Overworld",     Callback=function() game:GetService("TeleportService"):Teleport(11729688377, Players.LocalPlayer) end })
+	VoidSection:Button({ Title="Rejoin Server", Callback=function() game:GetService("TeleportService"):Teleport(game.PlaceId, Players.LocalPlayer) end })
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+local Tab99 = Window:Tab({ Title="AutoFarm", Icon="star", IconColor=y, IconShape="Square", Border=true })
+
+local RE_ByteNet = rs:WaitForChild("ByteNetReliable")
+
+
+local function writeF32LE(buf, offset, value)
+	local sign, exp, mant
+	if value ~= value then sign=0; exp=255; mant=1
+	elseif value == math.huge then sign=0; exp=255; mant=0
+	elseif value == -math.huge then sign=1; exp=255; mant=0
+	elseif value == 0 then sign=0; exp=0; mant=0
+	else
+		sign = value < 0 and 1 or 0; value = math.abs(value)
+		exp = math.floor(math.log(value, 2))
+		mant = math.floor((value/2^exp-1)*0x800000+0.5)
+		exp = exp + 127
+		if mant >= 0x800000 then mant=0; exp+=1 end
+		if exp >= 255 then exp=255; mant=0
+		elseif exp <= 0 then mant=math.floor(value/2^(-126)*0x800000+0.5); exp=0 end
+	end
+	local int = sign*0x80000000 + exp*0x800000 + mant
+	buffer.writeu8(buf,offset,  bit32.band(int,0xFF))
+	buffer.writeu8(buf,offset+1,bit32.band(bit32.rshift(int,8),0xFF))
+	buffer.writeu8(buf,offset+2,bit32.band(bit32.rshift(int,16),0xFF))
+	buffer.writeu8(buf,offset+3,bit32.band(bit32.rshift(int,24),0xFF))
+end
+
+local function writeU32LE(buf, offset, value)
+	buffer.writeu8(buf,offset,  bit32.band(value,0xFF))
+	buffer.writeu8(buf,offset+1,bit32.band(bit32.rshift(value,8),0xFF))
+	buffer.writeu8(buf,offset+2,bit32.band(bit32.rshift(value,16),0xFF))
+	buffer.writeu8(buf,offset+3,bit32.band(bit32.rshift(value,24),0xFF))
+end
+
+local function writeU16LE(buf, offset, value)
+	buffer.writeu8(buf,offset,  bit32.band(value,0xFF))
+	buffer.writeu8(buf,offset+1,bit32.band(bit32.rshift(value,8),0xFF))
+end
+
+
+local function buildPlacePacket(pos)
+	local buf = buffer.create(31)
+	buffer.writeu8(buf,0,0x00); buffer.writeu8(buf,1,0xE0)
+	buffer.writeu8(buf,2,0x09); buffer.writeu8(buf,3,0x00)
+	local name = "Plant Box"
+	for i=1,#name do buffer.writeu8(buf,3+i,string.byte(name,i)) end
+	writeF32LE(buf,13,pos.X); writeF32LE(buf,17,pos.Y); writeF32LE(buf,21,pos.Z)
+	for i=25,30 do buffer.writeu8(buf,i,0x00) end
+	return buf
+end
+
+local function buildPlantPacket(entityID, itemID)
+	local buf=buffer.create(8)
+	buffer.writeu8(buf,0,0x00); buffer.writeu8(buf,1,0x68)
+	writeU32LE(buf,2,entityID); writeU16LE(buf,6,itemID)
+	return buf
+end
+
+local function buildHarvestPacket(entityID)
+	local buf=buffer.create(6)
+	buffer.writeu8(buf,0,0x00); buffer.writeu8(buf,1,0xE6)
+	writeU32LE(buf,2,entityID)
+	return buf
+end
+
+local function placeOne(pos)   pcall(function() RE_ByteNet:FireServer(buildPlacePacket(pos)) end) end
+local function plantOne(eid,iid) pcall(function() RE_ByteNet:FireServer(buildPlantPacket(eid,iid)) end) end
+local function harvestOne(eid) pcall(function() RE_ByteNet:FireServer(buildHarvestPacket(eid)) end) end
+
+
+local af_fruits = {
+	Bloodfruit=94, Bluefruit=377, Lemon=99, Coconut=1,
+	Jelly=604, Banana=606, Orange=602, Oddberry=32,
+	Berry=35, Strangefruit=302, Strawberry=282, Sunfruit=128,
+	Pumpkin=80, ["Prickly Pear"]=378, Apple=243, Barley=247,
+	Cloudberry=101, Carrot=147,
+}
+local af_fruitNames = {}
+for k in pairs(af_fruits) do table.insert(af_fruitNames, k) end
+table.sort(af_fruitNames)
+
+
+local AF = {
+	gs=5, sp=6.04, yr=45,
+	placeDelay=0.3, loopDelay=15,
+	plantRange=30, plantDelay=0.010,
+	harvestRange=30, tweenRange=250,
+	selectedFruit="Bloodfruit",
+	tweenToBoxes=false,
+	tweenToFruits=false,
+}
+
+local af_placedTotal=0
+local af_plantedTotal=0
+local af_harvestTotal=0
+local af_autoPlaceActive=false;   local af_autoPlaceThread=nil
+local af_autoPlantActive=false;   local af_autoPlantThread=nil
+local af_autoHarvestActive=false; local af_autoHarvestThread=nil
+local af_tweenThread=nil
+local af_activeTween=nil
+
+
+local af_curFPS = 60
+do
+	local buf={}; for i=1,30 do buf[i]=1/60 end
+	local idx=1
+	runs.Heartbeat:Connect(function(dt)
+		buf[idx]=dt; idx=(idx%30)+1
+		local s=0; for _,v in ipairs(buf) do s+=v end
+		af_curFPS=math.floor(30/s)
+	end)
+end
+
+
+local function af_getAllModels()
+	local results = {}
+	
+
+	for _, obj in ipairs(workspace:GetChildren()) do
+		if obj:IsA("Model") and obj.Name == "Plant Box" then
+			table.insert(results, obj)
+		end
+	end
+	
+
+	local dep = workspace:FindFirstChild("Deployables")
+	if dep then
+		for _, obj in ipairs(dep:GetChildren()) do
+			if obj:IsA("Model") and obj.Name == "Plant Box" then
+				table.insert(results, obj)
+			end
+		end
+	end
+	
+
+	local map = workspace:FindFirstChild("Map")
+	if map then
+		for _, obj in ipairs(map:GetDescendants()) do
+			if obj:IsA("Model") and obj.Name == "Plant Box" then
+				table.insert(results, obj)
+			end
+		end
+	end
+	
+
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj:IsA("Model") and obj.Name == "Plant Box" then
+			
+			local found = false
+			for _, r in ipairs(results) do
+				if r == obj then found=true; break end
+			end
+			if not found then table.insert(results, obj) end
+		end
+	end
+	
+	return results
+end
+
+
+local function af_boxIsEmpty(obj)
+	
+	local hasPlant = obj:GetAttribute("HasPlant") or obj:GetAttribute("Planted") or obj:GetAttribute("Seeded")
+	if hasPlant then return false end
+	
+	
+	for _, child in ipairs(obj:GetChildren()) do
+		if child:IsA("Model") then return false end
+		local n = child.Name:lower()
+		if n:find("seed") or n:find("plant") or n:find("crop") or n:find("fruit") or n:find("sprout") then
+			return false
+		end
+	end
+	
+	
+	local state = obj:GetAttribute("PlantState") or obj:GetAttribute("State") or obj:GetAttribute("GrowthStage")
+	if state and state ~= 0 and state ~= "Empty" and state ~= "" then return false end
+	
+	return true
+end
+
+local function af_getPlantBoxes(range)
+	local out = {}
+	if not root then return out end
+	
+	local allBoxes = af_getAllModels()
+	
+	for _, obj in ipairs(allBoxes) do
+		local eid = obj:GetAttribute("EntityID")
+		local ppart = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+		
+		if eid and ppart then
+			local dist = (ppart.Position - root.Position).Magnitude
+			if dist <= range then
+				local isEmpty = af_boxIsEmpty(obj)
+				table.insert(out, {
+					entityid = eid,
+					deployable = obj,
+					ppart = ppart,
+					dist = dist,
+					isEmpty = isEmpty,
+				})
+			end
+		end
+	end
+	
+	table.sort(out, function(a,b) return a.dist < b.dist end)
+	return out
+end
+
+
+local function af_getFruitBushes(range, fruitname)
+	local out = {}
+	if not root then return out end
+	
+	
+	local searchIn = {workspace}
+	local foldersToCheck = {"Resources","Plants","Fruits","Environment","Map","World"}
+	for _, fname in ipairs(foldersToCheck) do
+		local f = workspace:FindFirstChild(fname)
+		if f then table.insert(searchIn, f) end
+	end
+	
+	local seen = {}
+	for _, container in ipairs(searchIn) do
+		local list = container == workspace and workspace:GetChildren() or container:GetDescendants()
+		for _, model in ipairs(list) do
+			if not seen[model] and model:IsA("Model") then
+				seen[model] = true
+				
+				local modelNameLower = model.Name:lower()
+				local fruitLower = fruitname:lower()
+				if modelNameLower:find(fruitLower, 1, true) then
+					local ppart = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+					if ppart then
+						local dist = (ppart.Position - root.Position).Magnitude
+						if dist <= range then
+							local eid = model:GetAttribute("EntityID")
+							if eid then
+								table.insert(out, {
+									entityid = eid,
+									model = model,
+									ppart = ppart,
+									dist = dist,
+								})
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	
+	table.sort(out, function(a,b) return a.dist < b.dist end)
+	return out
+end
+
+
+local function af_tweenCancel()
+	if af_activeTween then
+		pcall(function() af_activeTween:Cancel() end)
+		af_activeTween = nil
+	end
+end
+
+local function af_tweenTo(targetCF)
+	af_tweenCancel()
+	if not root then return end
+	local dist = (root.Position - targetCF.Position).Magnitude
+	if dist < 3 then return end 
+	local speed = 25 
+	local duration = dist / speed
+	local tw = tspmo:Create(
+		root,
+		TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.In),
+		{ CFrame = targetCF }
+	)
+	tw:Play()
+	af_activeTween = tw
+end
+
+
+local function af_startTweenLoop()
+	if af_tweenThread then task.cancel(af_tweenThread) end
+	af_tweenThread = task.spawn(function()
+		while AF.tweenToBoxes or AF.tweenToFruits do
+			if root then
+				local target = nil
+				
+				if AF.tweenToFruits then
+					local bushes = af_getFruitBushes(AF.tweenRange, AF.selectedFruit)
+					if #bushes > 0 then
+						target = bushes[1].ppart.CFrame + Vector3.new(0, 4, 0)
+					end
+				end
+				
+				if not target and AF.tweenToBoxes then
+					local boxes = af_getPlantBoxes(AF.tweenRange)
+					for _, box in ipairs(boxes) do
+						if box.isEmpty then
+							target = box.ppart.CFrame + Vector3.new(0, 4, 0)
+							break
+						end
+					end
+				end
+				
+				if target then
+					af_tweenTo(target)
+				end
+			end
+			task.wait(0.5) 
+		end
+		af_tweenCancel()
+	end)
+end
+
+local function af_stopTweenLoop()
+	if af_tweenThread then task.cancel(af_tweenThread); af_tweenThread=nil end
+	af_tweenCancel()
+end
+
+
+local function af_placeGrid(gridsize)
+	if not char or not root then return 0 end
+	gridsize = gridsize or AF.gs
+	local baseY = root.Position.Y - 3
+	local ox, oz = root.Position.X, root.Position.Z
+	local half = (gridsize-1)/2
+	local count = 0
+	for x=0,gridsize-1 do
+		for z=0,gridsize-1 do
+			placeOne(Vector3.new(ox+(x-half)*AF.sp, baseY, oz+(z-half)*AF.sp))
+			count += 1
+			af_placedTotal += 1
+			task.wait(AF.placeDelay)
+		end
+	end
+	return count
+end
+
+
+local af_pFolder = nil
+local af_pTiles = {}
+local af_pBuiltGs = 0
+local af_pBuiltSp = 0
+local af_pActive = false
+local af_pThread = nil
+
+local function af_gpos(gs, sp)
+	if not root then return {} end
+	local h = (gs-1)/2; local out = {}
+	for x=0,gs-1 do
+		for z=0,gs-1 do
+			out[#out+1] = Vector3.new(
+				root.Position.X+(x-h)*sp,
+				root.Position.Y-3,
+				root.Position.Z+(z-h)*sp
+			)
+		end
+	end
+	return out
+end
+
+local function af_clearPrev()
+	if af_pFolder and af_pFolder.Parent then af_pFolder:Destroy() end
+	af_pFolder=nil; af_pTiles={}; af_pBuiltGs=0; af_pBuiltSp=0
+end
+
+local function af_buildPrev(gs, sp)
+	af_clearPrev()
+	local f = Instance.new("Folder"); f.Name="__PBPrev__"; f.Parent=workspace; af_pFolder=f
+	local ts = math.max(sp-0.3, 1)
+	for i=1,gs*gs do
+		local p = Instance.new("Part")
+		p.Size=Vector3.new(ts,0.12,ts); p.Anchored=true; p.CanCollide=false
+		p.CastShadow=false; p.Material=Enum.Material.Neon
+		p.Color=Color3.fromRGB(50,220,100); p.Transparency=0.35; p.Parent=f
+		
+		local sel=Instance.new("SelectionBox")
+		sel.Color3=Color3.fromRGB(80,255,130); sel.LineThickness=0.05
+		sel.SurfaceTransparency=0.7; sel.SurfaceColor3=Color3.fromRGB(50,220,100)
+		sel.Adornee=p; sel.Parent=p
+		
+		local bb=Instance.new("BillboardGui")
+		bb.Size=UDim2.new(0,34,0,22); bb.StudsOffset=Vector3.new(0,0.5,0)
+		bb.AlwaysOnTop=true; bb.Adornee=p; bb.Parent=p
+		
+		local lbl=Instance.new("TextLabel")
+		lbl.Size=UDim2.new(1,0,1,0); lbl.BackgroundTransparency=1
+		lbl.Text=tostring(i); lbl.TextColor3=Color3.new(1,1,1)
+		lbl.TextScaled=true; lbl.Font=Enum.Font.GothamBold
+		lbl.TextStrokeTransparency=0.3; lbl.Parent=bb
+		
+		af_pTiles[i] = p
+	end
+	af_pBuiltGs=gs; af_pBuiltSp=sp
+end
+
+local function af_updatePrev(gs, sp, yr)
+	local pos = af_gpos(gs, sp)
+	local rot = CFrame.Angles(0, math.rad(yr), 0)
+	for i,p in ipairs(af_pTiles) do
+		if pos[i] and p.Parent then p.CFrame = CFrame.new(pos[i])*rot end
+	end
+end
+
+local function af_startPrev()
+	if af_pThread then task.cancel(af_pThread) end
+	af_pThread = task.spawn(function()
+		af_buildPrev(AF.gs, AF.sp)
+		while af_pActive do
+			if AF.gs~=af_pBuiltGs or AF.sp~=af_pBuiltSp then af_buildPrev(AF.gs, AF.sp) end
+			af_updatePrev(AF.gs, AF.sp, AF.yr)
+			task.wait(af_curFPS >= 50 and 0.07 or 0.15)
+		end
+		af_clearPrev()
+	end)
+end
+
+local function af_stopPrev()
+	af_pActive=false
+	if af_pThread then task.cancel(af_pThread); af_pThread=nil end
+	af_clearPrev()
+end
+
+
+Tab99:Section({ Title="Grid Config" })
+Tab99:Slider({ Title="Grid Size (N×N)",       Value={Min=1, Max=16, Default=5},   Callback=function(v) AF.gs=v end })
+Tab99:Slider({ Title="Spacing (studs)",        Value={Min=4, Max=12, Default=6},   Callback=function(v) AF.sp=v end })
+Tab99:Slider({ Title="Y Rotation",             Value={Min=0, Max=315,Default=45},  Callback=function(v) AF.yr=v end })
+Tab99:Slider({ Title="Delay Between Boxes (s)",Value={Min=0, Max=3,  Default=0.3}, Callback=function(v) AF.placeDelay=v end })
+
+Tab99:Section({ Title="Grid Preview" })
+Tab99:Toggle({ Title="Show Grid Preview", Value=false, Callback=function(s)
+	af_pActive=s
+	if s then af_startPrev() else af_stopPrev() end
+end })
+
+Tab99:Section({ Title="Place" })
+Tab99:Button({ Title="Test 1 Box at Feet", Callback=function()
+	task.spawn(function()
+		if not root then return end
+		placeOne(root.Position - Vector3.new(0,3,0))
+		WindUI:Notify({Title="Fired!",Content="1 box sent",Duration=3})
+	end)
+end })
+Tab99:Button({ Title="Place Custom Grid", Callback=function()
+	local gs=AF.gs
+	task.spawn(function()
+		local n=af_placeGrid(gs)
+		WindUI:Notify({Title="Done",Content=gs.."x"..gs.." = "..n.." placed",Duration=3})
+	end)
+end })
+Tab99:Button({ Title="Place 5x5 (25)",    Callback=function() task.spawn(function() local n=af_placeGrid(5);  WindUI:Notify({Title="Done",Content=n.." placed",Duration=3}) end) end })
+Tab99:Button({ Title="Place 10x10 (100)", Callback=function() task.spawn(function() local n=af_placeGrid(10); WindUI:Notify({Title="Done",Content=n.." placed",Duration=3}) end) end })
+Tab99:Button({ Title="Place 16x16 (256)", Callback=function() task.spawn(function() local n=af_placeGrid(16); WindUI:Notify({Title="Done",Content=n.." placed",Duration=3}) end) end })
+
+Tab99:Section({ Title="Auto Loop" })
+Tab99:Slider({ Title="Loop Interval (s)", Value={Min=3,Max=120,Default=15}, Callback=function(v) AF.loopDelay=v end })
+Tab99:Toggle({ Title="Auto Place Loop", Value=false, Callback=function(s)
+	af_autoPlaceActive=s
+	if s then
+		if af_autoPlaceThread then task.cancel(af_autoPlaceThread) end
+		af_autoPlaceThread=task.spawn(function()
+			while af_autoPlaceActive do
+				af_placeGrid(AF.gs)
+				local elapsed=0
+				while elapsed < AF.loopDelay and af_autoPlaceActive do
+					task.wait(0.5); elapsed+=0.5
+				end
+			end
+		end)
+		WindUI:Notify({Title="Auto Place ON",Content=AF.gs.."x"..AF.gs.." every "..AF.loopDelay.."s",Duration=3})
+	else
+		if af_autoPlaceThread then task.cancel(af_autoPlaceThread); af_autoPlaceThread=nil end
+		WindUI:Notify({Title="Auto Place OFF",Duration=2})
+	end
+end })
+
+Tab99:Section({ Title="Seed Config" })
+Tab99:Dropdown({ Title="Fruit", Values=af_fruitNames, Default="Bloodfruit", Callback=function(v)
+	if v and v~="" then AF.selectedFruit=v end
+end })
+Tab99:Slider({ Title="Plant Range (studs)", Value={Min=5,Max=500,Default=30},  Callback=function(v) AF.plantRange=v end })
+Tab99:Slider({ Title="Plant Delay (s)",     Value={Min=0,Max=2,  Default=0.1}, Callback=function(v) AF.plantDelay=v end })
+
+Tab99:Section({ Title="Plant" })
+Tab99:Button({ Title="Plant Once (Empty Boxes)", Callback=function()
+	task.spawn(function()
+		local itemID = af_fruits[AF.selectedFruit] or 94
+		local boxes = af_getPlantBoxes(AF.plantRange)
+		local count = 0
+		for _, box in ipairs(boxes) do
+			if box.isEmpty then
+				plantOne(box.entityid, itemID)
+				af_plantedTotal += 1
+				count += 1
+				task.wait(math.max(AF.plantDelay, 0.01))
+			end
+		end
+		WindUI:Notify({Title="Planted",Content=count.." × "..AF.selectedFruit,Duration=4})
+	end)
+end })
+
+
+Tab99:Button({ Title="Force Plant All (ignore state)", Callback=function()
+	task.spawn(function()
+		local itemID = af_fruits[AF.selectedFruit] or 94
+		local boxes = af_getPlantBoxes(AF.plantRange)
+		local count = 0
+		for _, box in ipairs(boxes) do
+			plantOne(box.entityid, itemID)
+			af_plantedTotal += 1
+			count += 1
+			task.wait(math.max(AF.plantDelay, 0.01))
+		end
+		WindUI:Notify({Title="Force Planted",Content=count.." × "..AF.selectedFruit,Duration=4})
+	end)
+end })
+
+Tab99:Toggle({ Title="Auto Plant", Value=false, Callback=function(s)
+	af_autoPlantActive=s
+	if s then
+		if af_autoPlantThread then task.cancel(af_autoPlantThread) end
+		af_autoPlantThread=task.spawn(function()
+			while af_autoPlantActive do
+				local itemID = af_fruits[AF.selectedFruit] or 94
+				local boxes = af_getPlantBoxes(AF.plantRange)
+				for _, box in ipairs(boxes) do
+					if not af_autoPlantActive then break end
+					if box.isEmpty then
+						plantOne(box.entityid, itemID)
+						af_plantedTotal += 1
+						task.wait(math.max(AF.plantDelay, 0.01))
+					end
+				end
+				task.wait(1) 
+			end
+		end)
+		WindUI:Notify({Title="Auto Plant ON",Content=AF.selectedFruit,Duration=3})
+	else
+		if af_autoPlantThread then task.cancel(af_autoPlantThread); af_autoPlantThread=nil end
+		WindUI:Notify({Title="Auto Plant OFF",Duration=2})
+	end
+end })
+
+Tab99:Section({ Title="Harvest Config" })
+Tab99:Slider({ Title="Harvest Range (studs)", Value={Min=5,Max=1000,Default=30}, Callback=function(v) AF.harvestRange=v end })
+
+Tab99:Section({ Title="Harvest" })
+Tab99:Button({ Title="Harvest Once", Callback=function()
+	task.spawn(function()
+		local bushes = af_getFruitBushes(AF.harvestRange, AF.selectedFruit)
+		local count = 0
+		for _, b in ipairs(bushes) do
+			harvestOne(b.entityid)
+			af_harvestTotal += 1
+			count += 1
+			task.wait(0.05)
+		end
+		WindUI:Notify({Title="Harvested",Content=count.." × "..AF.selectedFruit,Duration=4})
+	end)
+end })
+
+Tab99:Toggle({ Title="Auto Harvest", Value=false, Callback=function(s)
+	af_autoHarvestActive=s
+	if s then
+		if af_autoHarvestThread then task.cancel(af_autoHarvestThread) end
+		af_autoHarvestThread=task.spawn(function()
+			while af_autoHarvestActive do
+				local bushes = af_getFruitBushes(AF.harvestRange, AF.selectedFruit)
+				for _, b in ipairs(bushes) do
+					if not af_autoHarvestActive then break end
+					harvestOne(b.entityid)
+					af_harvestTotal += 1
+				end
+				task.wait(0.1)
+			end
+		end)
+		WindUI:Notify({Title="Auto Harvest ON",Content=AF.selectedFruit,Duration=3})
+	else
+		if af_autoHarvestThread then task.cancel(af_autoHarvestThread); af_autoHarvestThread=nil end
+		WindUI:Notify({Title="Auto Harvest OFF",Duration=2})
+	end
+end })
+
+Tab99:Section({ Title="Tween / Movement" })
+Tab99:Slider({ Title="Tween Range (studs)", Value={Min=10,Max=1000,Default=250}, Callback=function(v) AF.tweenRange=v end })
+
+Tab99:Toggle({ Title="Tween to Empty Boxes", Value=false, Callback=function(s)
+	AF.tweenToBoxes = s
+	if s then
+		af_startTweenLoop()
+		WindUI:Notify({Title="Tween Boxes ON",Duration=2})
+	elseif not AF.tweenToFruits then
+		af_stopTweenLoop()
+		WindUI:Notify({Title="Tween OFF",Duration=2})
+	end
+end })
+
+Tab99:Toggle({ Title="Tween to Fruit Bushes", Value=false, Callback=function(s)
+	AF.tweenToFruits = s
+	if s then
+		af_startTweenLoop()
+		WindUI:Notify({Title="Tween Fruits ON",Duration=2})
+	elseif not AF.tweenToBoxes then
+		af_stopTweenLoop()
+		WindUI:Notify({Title="Tween OFF",Duration=2})
+	end
+end })
+
+Tab99:Button({ Title="Stop Tween Now", Callback=function()
+	af_tweenCancel()
+	WindUI:Notify({Title="Tween Stopped",Duration=2})
+end })
+
+
+Tab99:Section({ Title="Debug" })
+Tab99:Button({ Title="Print Found Boxes", Callback=function()
+	local boxes = af_getPlantBoxes(AF.plantRange)
+	print("=== Plant Boxes within "..AF.plantRange.."studs ===")
+	print("Total found: "..#boxes)
+	for i, b in ipairs(boxes) do
+		print(i..": EntityID="..tostring(b.entityid).." dist="..math.floor(b.dist).." empty="..tostring(b.isEmpty))
+	end
+	WindUI:Notify({Title="Debug",Content=#boxes.." boxes found. Check console.",Duration=5})
+end })
+
+Tab99:Button({ Title="Print Found Bushes", Callback=function()
+	local bushes = af_getFruitBushes(AF.harvestRange, AF.selectedFruit)
+	print("=== "..AF.selectedFruit.." Bushes within "..AF.harvestRange.."studs ===")
+	print("Total found: "..#bushes)
+	for i, b in ipairs(bushes) do
+		print(i..": EntityID="..tostring(b.entityid).." dist="..math.floor(b.dist))
+	end
+	WindUI:Notify({Title="Debug",Content=#bushes.." bushes found. Check console.",Duration=5})
+end })
+
+Tab99:Section({ Title="Stats" })
+Tab99:Button({ Title="Print Stats", Callback=function()
+	WindUI:Notify({
+		Title="AutoFarm Stats",
+		Content=af_placedTotal.." placed\n"..af_plantedTotal.." planted\n"..af_harvestTotal.." harvested",
+		Duration=5
+	})
+end })
+
+
+do
+	local FPSSection = Tab4:Section({ Title="Fps Boosters", Icon="star" })
+	FPSSection:Button({ Title="FPS+ Ultra", Callback=function()
+		local Lighting = game:GetService("Lighting")
+		local LocalPlayer = Players.LocalPlayer
+		Lighting.GlobalShadows=false; Lighting.FogEnd=9e9; Lighting.Brightness=1
+		Lighting.ShadowSoftness=0; Lighting.OutdoorAmbient=Color3.fromRGB(128,128,128)
+		Lighting.ClockTime=14; Lighting.Ambient=Color3.fromRGB(128,128,128)
+		Lighting.ExposureCompensation=0; Lighting.ColorShift_Bottom=Color3.fromRGB(128,128,128)
+		Lighting.ColorShift_Top=Color3.fromRGB(128,128,128); Lighting.BlurSize=0
+		Lighting.FogColor=Color3.fromRGB(128,128,128); Lighting.EnvironmentDiffuseScale=0
+		Lighting.EnvironmentSpecularScale=0
+
+		for _, v in ipairs(workspace:GetDescendants()) do
+			if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Beam")
+			or v:IsA("Fire") or v:IsA("Smoke") or v:IsA("Sparkles") then
+				v.Enabled=false
+			elseif v:IsA("Decal") or v:IsA("Texture") then
+				v.Transparency=1
+			elseif v:IsA("MeshPart") then
+				v.TextureID=""
+			end
+		end
+		for _, part in ipairs(workspace:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CastShadow=false
+				part.Material=Enum.Material.SmoothPlastic
+				part.Reflectance=0
+			end
+		end
+		WindUI:Notify({Title="FPS+ Applied",Duration=3})
+	end })
+end
+
+
+do
+	local ah_enabled=false; local ah_players=true; local ah_resources=false
+	local ah_range=20; local ah_delay=0.05; local ah_thread=nil
+
+	local function buildSwingPacket(hitPos, origin)
+		local buf=buffer.create(30)
+		buffer.writeu8(buf,0,0x00); buffer.writeu8(buf,1,0x13)
+		buffer.writeu8(buf,2,0x00); buffer.writeu8(buf,3,0x00)
+		writeF32LE(buf,4,hitPos.X); writeF32LE(buf,8,hitPos.Y); writeF32LE(buf,12,hitPos.Z)
+		buffer.writeu8(buf,16,0x00); buffer.writeu8(buf,17,0x00)
+		writeF32LE(buf,18,origin.X); writeF32LE(buf,22,origin.Y); writeF32LE(buf,26,origin.Z)
+		return buf
+	end
+
+	local function getNearestEnemy()
+		local best,bd=nil,ah_range
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p~=plr and p.Character then
+				local pr=p.Character:FindFirstChild("HumanoidRootPart")
+				local ph=p.Character:FindFirstChild("Humanoid")
+				if pr and ph and ph.Health>0 then
+					local d=(pr.Position-root.Position).Magnitude
+					if d<bd then best=pr; bd=d end
+				end
+			end
+		end
+		return best
+	end
+
+	local function getNearestResource()
+		local best,bd=nil,ah_range
+		local res=workspace:FindFirstChild("Resources")
+		if not res then return nil end
+		for _, obj in ipairs(res:GetChildren()) do
+			local pp = obj:IsA("BasePart") and obj
+				or (obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")))
+			if pp then
+				local d=(pp.Position-root.Position).Magnitude
+				if d<bd then best=pp; bd=d end
+			end
+		end
+		return best
+	end
+
+	local function startAH()
+		if ah_thread then task.cancel(ah_thread) end
+		ah_thread=task.spawn(function()
+			while ah_enabled do
+				if root then
+					local t=nil
+					if ah_players then t=getNearestEnemy() end
+					if not t and ah_resources then t=getNearestResource() end
+					if t then
+						pcall(function() RE_ByteNet:FireServer(buildSwingPacket(t.Position,root.Position)) end)
+					end
+				end
+				task.wait(ah_delay)
+			end
+		end)
+	end
+
+	HitSection:Toggle({ Title="Hit Players",   Value=false, Callback=function(s) ah_players=s end })
+	HitSection:Toggle({ Title="Hit Resources", Value=false, Callback=function(s) ah_resources=s end })
+	HitSection:Slider({ Title="Range (studs)", Value={Min=5,Max=60,Default=20},               Callback=function(v) ah_range=v end })
+	HitSection:Slider({ Title="Delay (s)",     Value={Min=0.01,Max=1,Default=0.05},Step=0.01, Callback=function(v) ah_delay=v end })
+	HitSection:Toggle({ Title="Enable Auto Hit", Value=false, Callback=function(s)
+		ah_enabled=s
+		if s then startAH()
+		else if ah_thread then task.cancel(ah_thread); ah_thread=nil end end
+	end })
+
+	plr.CharacterAdded:Connect(function(c)
+		char=c
+		root=c:WaitForChild("HumanoidRootPart")
+		hum=c:WaitForChild("Humanoid")
+		af_tweenCancel() 
+		if ah_enabled then startAH() end
+	end)
+end
+
+
+
+
+
+
+
+
+
+
+
+local TabCfg = Window:Tab({
+    Title = "Config",
+    Icon = "settings",
+    IconColor = Color3.fromHex("#aaaaaa"),
+    Border = true
+})
+
+TabCfg:Section({ Title = "Config" })
+
+local Themes = {
+    "My Theme",
+    "Dark",
+    "Light",
+    "Ocean",
+    "Sunset",
+    "Neon",
+    "Forest",
+    "Purple Haze",
+    "Blood",
+    "Ice",
+}
+
+
+
+WindUI:AddTheme({
+    Name = "My Theme",
+    Accent = Color3.fromHex("#18181b"),
+    Background = Color3.fromHex("#101010"),
+    Outline = Color3.fromHex("#FFFFFF"),
+    Text = Color3.fromHex("#FFFFFF"),
+    Placeholder = Color3.fromHex("#7a7a7a"),
+    Button = Color3.fromHex("#52525b"),
+    Icon = Color3.fromHex("#a1a1aa"),
+})
+
+WindUI:AddTheme({
+    Name = "Dark",
+    Accent = Color3.fromHex("#0a0a0a"),
+    Background = Color3.fromHex("#000000"),
+    Outline = Color3.fromHex("#2b2b2b"),
+    Text = Color3.fromHex("#ffffff"),
+    Placeholder = Color3.fromHex("#666666"),
+    Button = Color3.fromHex("#1f1f1f"),
+    Icon = Color3.fromHex("#aaaaaa"),
+})
+
+WindUI:AddTheme({
+    Name = "Light",
+    Accent = Color3.fromHex("#e5e7eb"),
+    Background = Color3.fromHex("#ffffff"),
+    Outline = Color3.fromHex("#d1d5db"),
+    Text = Color3.fromHex("#111827"),
+    Placeholder = Color3.fromHex("#6b7280"),
+    Button = Color3.fromHex("#f3f4f6"),
+    Icon = Color3.fromHex("#374151"),
+})
+
+WindUI:AddTheme({
+    Name = "Ocean",
+    Accent = Color3.fromHex("#0ea5e9"),
+    Background = Color3.fromHex("#0b1220"),
+    Outline = Color3.fromHex("#1e293b"),
+    Text = Color3.fromHex("#e0f2fe"),
+    Placeholder = Color3.fromHex("#38bdf8"),
+    Button = Color3.fromHex("#0284c7"),
+    Icon = Color3.fromHex("#7dd3fc"),
+})
+
+WindUI:AddTheme({
+    Name = "Sunset",
+    Accent = Color3.fromHex("#fb7185"),
+    Background = Color3.fromHex("#1c1917"),
+    Outline = Color3.fromHex("#44403c"),
+    Text = Color3.fromHex("#fff7ed"),
+    Placeholder = Color3.fromHex("#fdba74"),
+    Button = Color3.fromHex("#f97316"),
+    Icon = Color3.fromHex("#fecaca"),
+})
+
+WindUI:AddTheme({
+    Name = "Neon",
+    Accent = Color3.fromHex("#39ff14"),
+    Background = Color3.fromHex("#0d0d0d"),
+    Outline = Color3.fromHex("#1a1a1a"),
+    Text = Color3.fromHex("#39ff14"),
+    Placeholder = Color3.fromHex("#00ffcc"),
+    Button = Color3.fromHex("#111111"),
+    Icon = Color3.fromHex("#ff00ff"),
+})
+
+WindUI:AddTheme({
+    Name = "Forest",
+    Accent = Color3.fromHex("#22c55e"),
+    Background = Color3.fromHex("#052e16"),
+    Outline = Color3.fromHex("#14532d"),
+    Text = Color3.fromHex("#dcfce7"),
+    Placeholder = Color3.fromHex("#86efac"),
+    Button = Color3.fromHex("#16a34a"),
+    Icon = Color3.fromHex("#bbf7d0"),
+})
+
+WindUI:AddTheme({
+    Name = "Purple Haze",
+    Accent = Color3.fromHex("#a855f7"),
+    Background = Color3.fromHex("#1e1b4b"),
+    Outline = Color3.fromHex("#312e81"),
+    Text = Color3.fromHex("#ede9fe"),
+    Placeholder = Color3.fromHex("#c4b5fd"),
+    Button = Color3.fromHex("#7c3aed"),
+    Icon = Color3.fromHex("#ddd6fe"),
+})
+
+WindUI:AddTheme({
+    Name = "Blood",
+    Accent = Color3.fromHex("#dc2626"),
+    Background = Color3.fromHex("#0b0b0b"),
+    Outline = Color3.fromHex("#2a0000"),
+    Text = Color3.fromHex("#fee2e2"),
+    Placeholder = Color3.fromHex("#f87171"),
+    Button = Color3.fromHex("#7f1d1d"),
+    Icon = Color3.fromHex("#ef4444"),
+})
+
+WindUI:AddTheme({
+    Name = "Ice",
+    Accent = Color3.fromHex("#67e8f9"),
+    Background = Color3.fromHex("#0f172a"),
+    Outline = Color3.fromHex("#1e293b"),
+    Text = Color3.fromHex("#e0f7ff"),
+    Placeholder = Color3.fromHex("#38bdf8"),
+    Button = Color3.fromHex("#0ea5e9"),
+    Icon = Color3.fromHex("#a5f3fc"),
+})
+
+
+
+TabCfg:Dropdown({
+    Title = "Select Theme",
+    Values = Themes,
+    Value = "My Theme",
+
+    Callback = function(selected)
+        WindUI:SetTheme(selected)
+    end
+})
