@@ -799,14 +799,310 @@ function getPlaceStructureId()
     return getPacketId("PlaceStructure")
 end
 
+-- ByteNet client wire header (ReplicatedStorage.Modules.ByteNet.process.client sendReliable):
+-- u8 debug flag (0 from external scripts), u16 LE packet id, then typed payload.
+BYTENET_HEADER_SIZE = 3
+
+function writeByteNetHeader(b, packetId)
+    buffer.writeu8(b, 0, 0)
+    buffer.writeu16(b, 1, math.floor(tonumber(packetId) or 0))
+end
+
+-- Half-float + 18-byte CFrame (position f32×3 + euler f16×3). Hoisted so placement/swing work even when buffer.writef16 is missing.
+local function bufferWriteF16(b, offset, value)
+    local writef16 = buffer.writef16
+    if type(writef16) == "function" then
+        local ok = pcall(writef16, b, offset, value)
+        if ok then return end
+    end
+    local f = tonumber(value) or 0
+    if f > 65504 then
+        buffer.writeu16(b, offset, 31744)
+    elseif f < -65504 then
+        buffer.writeu16(b, offset, 64512)
+    elseif f ~= f then
+        buffer.writeu16(b, offset, 64513)
+    elseif f == 0 then
+        buffer.writeu16(b, offset, 0)
+    else
+        local v9 = math.abs(f)
+        local v10 = math.ldexp(1, math.floor(math.log(v9, 2)) - 10)
+        local v11, v12 = math.frexp((v9 // v10) * v10)
+        local v13 = v12 + 14
+        local v14 = ((v13 <= 0) and (v11 * 1024 / math.ldexp(1, math.abs(v13)))) or (v11 * 2048)
+        local rounded = math.floor(v14 + 0.5)
+        local v15 = rounded % 1024 + math.max(v13, 0) * 1024
+        buffer.writeu16(b, offset, v15 + (((f < 0) and 32768) or 0))
+    end
+end
+
+local function bufferWriteString(b, offset, str, len)
+    len = len or #str
+    local writestring = buffer.writestring
+    if type(writestring) == "function" then
+        writestring(b, offset, str, len)
+        return
+    end
+    for i = 0, len - 1 do
+        buffer.writeu8(b, offset + i, string.byte(str, i + 1))
+    end
+end
+
+function write18ByteCFrame(b, offset, cf)
+    if typeof(cf) ~= "CFrame" then
+        local ok, converted = pcall(CFrame.new, cf)
+        cf = ok and converted or CFrame.new()
+    end
+    local pos = cf.Position
+    local rx, ry, rz = 0, 0, 0
+    local okE, ex, ey, ez = pcall(function()
+        return cf:ToEulerAnglesXYZ()
+    end)
+    if okE then
+        rx, ry, rz = ex, ey, ez
+    else
+        okE, ex, ey, ez = pcall(function()
+            return cf:ToOrientation()
+        end)
+        if okE then
+            rx, ry, rz = ex, ey, ez
+        end
+    end
+    buffer.writef32(b, offset, pos.X)
+    buffer.writef32(b, offset + 4, pos.Y)
+    buffer.writef32(b, offset + 8, pos.Z)
+    bufferWriteF16(b, offset + 12, rx)
+    bufferWriteF16(b, offset + 14, ry)
+    bufferWriteF16(b, offset + 16, rz)
+end
+
+function fireByteNetClientSwing()
+    if not ByteNetReliable then return false end
+    local swingId = getPacketId("ClientSwing")
+    if not swingId then return false end
+    local b = buffer.create(BYTENET_HEADER_SIZE)
+    writeByteNetHeader(b, swingId)
+    ByteNetReliable:FireServer(b)
+    return true
+end
+
+function fireByteNetUseBagItem(slotIndex)
+    if not ByteNetReliable then return false end
+    local id = getPacketId("UseBagItem")
+    local slot = math.floor(tonumber(slotIndex) or 0)
+    if not id or slot <= 0 then return false end
+    local b = buffer.create(BYTENET_HEADER_SIZE + 2)
+    writeByteNetHeader(b, id)
+    buffer.writeu16(b, BYTENET_HEADER_SIZE, slot)
+    ByteNetReliable:FireServer(b)
+    return true
+end
+
+function fireByteNetInteractStructure(entityId, itemId)
+    if not ByteNetReliable then return false end
+    local pid = getPacketId("InteractStructure")
+    local eid = math.floor(tonumber(entityId) or 0)
+    local iid = math.floor(tonumber(itemId) or 0)
+    if not pid or eid <= 0 then return false end
+    local b = buffer.create(BYTENET_HEADER_SIZE + 6)
+    writeByteNetHeader(b, pid)
+    buffer.writeu32(b, BYTENET_HEADER_SIZE, eid)
+    buffer.writeu16(b, BYTENET_HEADER_SIZE + 4, iid)
+    ByteNetReliable:FireServer(b)
+    return true
+end
+
+function fireByteNetCraftItem(itemId)
+    if not ByteNetReliable then return false end
+    local pid = getPacketId("CraftItem")
+    local id = math.floor(tonumber(itemId) or 0)
+    if not pid or id <= 0 then return false end
+    local b = buffer.create(BYTENET_HEADER_SIZE + 2)
+    writeByteNetHeader(b, pid)
+    buffer.writeu16(b, BYTENET_HEADER_SIZE, id)
+    ByteNetReliable:FireServer(b)
+    return true
+end
+
+function fireByteNetPlaceStructure(targetCFrame, buildingName)
+    if not ByteNetReliable or not buildingName or buildingName == "" then return false end
+    if not targetCFrame then return false end
+    local packetId = getPacketId("PlaceStructure")
+    if not packetId then return false end
+    local nameLen = #buildingName
+    local b = buffer.create(BYTENET_HEADER_SIZE + 2 + nameLen + 18)
+    writeByteNetHeader(b, packetId)
+    local o = BYTENET_HEADER_SIZE
+    buffer.writeu16(b, o, nameLen)
+    o = o + 2
+    bufferWriteString(b, o, buildingName, nameLen)
+    o = o + nameLen
+    write18ByteCFrame(b, o, targetCFrame)
+    ByteNetReliable:FireServer(b)
+    return true
+end
+
+function fireByteNetCraftPotion(itemId, entityId)
+    if not ByteNetReliable then return false end
+    local pid = getPacketId("CraftPotion")
+    local iid = math.floor(tonumber(itemId) or 0)
+    local eid = math.floor(tonumber(entityId) or 0)
+    if not pid or iid <= 0 then return false end
+    local b = buffer.create(BYTENET_HEADER_SIZE + 6)
+    writeByteNetHeader(b, pid)
+    buffer.writeu32(b, BYTENET_HEADER_SIZE, eid)
+    buffer.writeu16(b, BYTENET_HEADER_SIZE + 4, iid)
+    ByteNetReliable:FireServer(b)
+    return true
+end
+
+function fireByteNetDropBagItem(slotIndex)
+    if not ByteNetReliable then return false end
+    local pid = getPacketId("DropBagItem")
+    if not pid then return false end
+    local slot = math.floor(tonumber(slotIndex) or -1)
+    if slot < 0 then return false end
+    local b = buffer.create(BYTENET_HEADER_SIZE + 2)
+    writeByteNetHeader(b, pid)
+    buffer.writeu16(b, BYTENET_HEADER_SIZE, slot)
+    ByteNetReliable:FireServer(b)
+    return true
+end
+
+function fireByteNetEquipTool(slot)
+    if not ByteNetReliable then return false end
+    local pid = getPacketId("EquipTool")
+    local s = math.floor(tonumber(slot) or 0)
+    if not pid or s <= 0 then return false end
+    local b = buffer.create(BYTENET_HEADER_SIZE + 1)
+    writeByteNetHeader(b, pid)
+    buffer.writeu8(b, BYTENET_HEADER_SIZE, math.clamp(s, 0, 255))
+    ByteNetReliable:FireServer(b)
+    return true
+end
+
+function fireByteNetU16Packet(packetName, value)
+    if not ByteNetReliable then return false end
+    local pid = getPacketId(packetName)
+    local v = math.floor(tonumber(value) or 0)
+    if not pid or v <= 0 then return false end
+    local b = buffer.create(BYTENET_HEADER_SIZE + 2)
+    writeByteNetHeader(b, pid)
+    buffer.writeu16(b, BYTENET_HEADER_SIZE, v)
+    ByteNetReliable:FireServer(b)
+    return true
+end
+
+function fireByteNetPurchaseFromShop(itemId)
+    return fireByteNetU16Packet("PurchaseFromShop", itemId)
+end
+
+function fireByteNetRetool(slot)
+    if not ByteNetReliable then return false end
+    local pid = getPacketId("Retool")
+    local s = math.floor(tonumber(slot) or 0)
+    if not pid or s <= 0 then return false end
+    local b = buffer.create(BYTENET_HEADER_SIZE + 1)
+    writeByteNetHeader(b, pid)
+    buffer.writeu8(b, BYTENET_HEADER_SIZE, math.clamp(s, 0, 255))
+    ByteNetReliable:FireServer(b)
+    return true
+end
+
+function fireByteNetStringPacket(packetName, str)
+    if not ByteNetReliable or type(str) ~= "string" or str == "" then return false end
+    local pid = getPacketId(packetName)
+    if not pid then return false end
+    local len = #str
+    local b = buffer.create(BYTENET_HEADER_SIZE + 2 + len)
+    writeByteNetHeader(b, pid)
+    buffer.writeu16(b, BYTENET_HEADER_SIZE, len)
+    buffer.writestring(b, BYTENET_HEADER_SIZE + 2, str, len)
+    ByteNetReliable:FireServer(b)
+    return true
+end
+
+function fireByteNetOptionalU32(packetName, entityId)
+    if not ByteNetReliable then return false end
+    local pid = getPacketId(packetName)
+    local id = math.floor(tonumber(entityId) or 0)
+    if not pid or id <= 0 then return false end
+    local b = buffer.create(BYTENET_HEADER_SIZE + 1 + 4)
+    writeByteNetHeader(b, pid)
+    buffer.writeu8(b, BYTENET_HEADER_SIZE, 1)
+    buffer.writeu32(b, BYTENET_HEADER_SIZE + 1, id)
+    ByteNetReliable:FireServer(b)
+    return true
+end
+
+function fireByteNetDig(point, moundEntityId)
+    if not ByteNetReliable or not point then return false end
+    local digId = getPacketId("Dig")
+    if not digId then return false end
+    local px = point.X or point.x
+    local py = point.Y or point.y
+    local pz = point.Z or point.z
+    if px == nil or py == nil or pz == nil then return false end
+    local eid = math.floor(tonumber(moundEntityId) or 0)
+    local hasMound = eid > 0
+    local b = buffer.create(BYTENET_HEADER_SIZE + 1 + (hasMound and 4 or 0) + 12)
+    writeByteNetHeader(b, digId)
+    local o = BYTENET_HEADER_SIZE
+    if hasMound then
+        buffer.writeu8(b, o, 1)
+        buffer.writeu32(b, o + 1, eid)
+        o = o + 5
+    else
+        buffer.writeu8(b, o, 0)
+        o = o + 1
+    end
+    buffer.writef32(b, o, px)
+    buffer.writef32(b, o + 4, py)
+    buffer.writef32(b, o + 8, pz)
+    ByteNetReliable:FireServer(b)
+    return true
+end
+
+function fireByteNetPurchaseCrate(crateName, amount)
+    if not ByteNetReliable or type(crateName) ~= "string" then return false end
+    local pid = getPacketId("PurchaseCrate")
+    if not pid then return false end
+    amount = math.floor(tonumber(amount) or 1)
+    local len = #crateName
+    local b = buffer.create(BYTENET_HEADER_SIZE + 4 + 2 + len)
+    writeByteNetHeader(b, pid)
+    local o = BYTENET_HEADER_SIZE
+    buffer.writeu32(b, o, amount)
+    o = o + 4
+    buffer.writeu16(b, o, len)
+    buffer.writestring(b, o + 2, crateName, len)
+    ByteNetReliable:FireServer(b)
+    return true
+end
+
+-- WaveAction struct { action: string, value: f64 } (e.g. "ready" = 1, "skip" = 0).
+function fireByteNetWaveAction(action, value)
+    if not ByteNetReliable or type(action) ~= "string" or action == "" then return false end
+    local pid = getPacketId("WaveAction")
+    if not pid then return false end
+    local len = #action
+    local b = buffer.create(BYTENET_HEADER_SIZE + 2 + len + 8)
+    writeByteNetHeader(b, pid)
+    local o = BYTENET_HEADER_SIZE
+    buffer.writeu16(b, o, len)
+    buffer.writestring(b, o + 2, action, len)
+    buffer.writef64(b, o + 2 + len, tonumber(value) or 0)
+    ByteNetReliable:FireServer(b)
+    return true
+end
+
 -- Convenience: send a no-payload C→S packet by name.
 function firePacket(packetName)
     if not ByteNetReliable then return false end
     local id = getPacketId(packetName)
     if not id then return false end
-    local b = buffer.create(2)
-    buffer.writeu8(b, 0, 0)
-    buffer.writeu8(b, 1, id)
+    local b = buffer.create(BYTENET_HEADER_SIZE)
+    writeByteNetHeader(b, id)
     ByteNetReliable:FireServer(b)
     return true
 end
@@ -1293,53 +1589,6 @@ function writeByteNetCFrame(b, offset, cf)
     buffer.writei16(b, offset + 17, math.clamp(qz * 32767, -32768, 32767))
 end
 
-function write18ByteCFrame(b, offset, cf)
-    local pos = cf.Position
-    
-    local _, _, _, R00, R01, R02, R10, R11, R12, R20, R21, R22 = cf:GetComponents()
-    local qx, qy, qz, qw
-    local tr = R00 + R11 + R22
-    if tr > 0 then
-        local S = math.sqrt(tr + 1.0) * 2
-        qw = 0.25 * S
-        qx = (R21 - R12) / S
-        qy = (R02 - R20) / S
-        qz = (R10 - R01) / S
-    elseif (R00 > R11) and (R00 > R22) then
-        local S = math.sqrt(1.0 + R00 - R11 - R22) * 2
-        qw = (R21 - R12) / S
-        qx = 0.25 * S
-        qy = (R01 + R10) / S
-        qz = (R02 + R20) / S
-    elseif R11 > R22 then
-        local S = math.sqrt(1.0 + R11 - R00 - R22) * 2
-        qw = (R02 - R20) / S
-        qx = (R01 + R10) / S
-        qy = 0.25 * S
-        qz = (R12 + R21) / S
-    else
-        local S = math.sqrt(1.0 + R22 - R00 - R11) * 2
-        qw = (R10 - R01) / S
-        qx = (R02 + R20) / S
-        qy = (R12 + R21) / S
-        qz = 0.25 * S
-    end
-    
-    local len = math.sqrt(qx*qx + qy*qy + qz*qz + qw*qw)
-    qx, qy, qz, qw = qx/len, qy/len, qz/len, qw/len
-    
-    if qw < 0 then
-        qx, qy, qz, qw = -qx, -qy, -qz, -qw
-    end
-    
-    buffer.writef32(b, offset, pos.X)
-    buffer.writef32(b, offset + 4, pos.Y)
-    buffer.writef32(b, offset + 8, pos.Z)
-    buffer.writei16(b, offset + 12, math.clamp(qx * 32767, -32768, 32767))
-    buffer.writei16(b, offset + 14, math.clamp(qy * 32767, -32768, 32767))
-    buffer.writei16(b, offset + 16, math.clamp(qz * 32767, -32768, 32767))
-end
-
 local function getBoogaPlayerCharacter(player)
     if not player then return nil end
     local playersFolder = workspace:FindFirstChild("Players")
@@ -1426,15 +1675,15 @@ function sendVoodooPacket(targetRef, originRef)
         end
     end
 
-    local b = buffer.create(26)
-    buffer.writeu8(b, 0, 0)
-    buffer.writeu8(b, 1, voodooId)
-    buffer.writef32(b, 2, flatDir.X)
-    buffer.writef32(b, 6, 0)
-    buffer.writef32(b, 10, flatDir.Z)
-    buffer.writef32(b, 14, hitPos.X)
-    buffer.writef32(b, 18, hitPos.Y)
-    buffer.writef32(b, 22, hitPos.Z)
+    local b = buffer.create(BYTENET_HEADER_SIZE + 24)
+    writeByteNetHeader(b, voodooId)
+    local o = BYTENET_HEADER_SIZE
+    buffer.writef32(b, o, flatDir.X)
+    buffer.writef32(b, o + 4, 0)
+    buffer.writef32(b, o + 8, flatDir.Z)
+    buffer.writef32(b, o + 12, hitPos.X)
+    buffer.writef32(b, o + 16, hitPos.Y)
+    buffer.writef32(b, o + 20, hitPos.Z)
 
     ByteNetReliable:FireServer(b)
 end
@@ -5504,6 +5753,20 @@ Settings = {
     CritterSwingPackedMultiHit = true,
     CritterType = "All",
 
+    -- Event
+    MoveToEnemies = false,
+    EventMoveType = "Tween",
+    EventMoveStyle = "RandomEnemies",
+    EventPriorities = {},
+    EventMoveSpeed = 18,
+    EventCritterAuraEnabled = false,
+    EventCritterAmount = 3,
+    EventBehindDistance = 3,
+    AutoEquipGodRock = false,
+    AutoPickupHauntedSpirit = false,
+    AutoReadyUp = false,
+    AutoSkipCountDown = false,
+
     
     -- Critter ESP
     CritterESPEnabled = false,
@@ -5872,8 +6135,9 @@ function onCharacterAdded(newChar)
     hum = char:WaitForChild("Humanoid")
     if hum then hum.MaxSlopeAngle = Settings.MaxSlopeEnabled and 89 or 50 end
     captureCollisionState()
-    if Settings.AutoHealEnabled then
-        bindSmartHealHealthWatch(newChar)
+    local bindHealWatch = getAsterEnv().AsterBindSmartHealHealthWatch
+    if Settings.AutoHealEnabled and type(bindHealWatch) == "function" then
+        bindHealWatch(newChar)
     end
     if type(getAsterEnv().AsterRestorePlayerReach) == "function" then
         pcall(getAsterEnv().AsterRestorePlayerReach)
@@ -6109,16 +6373,15 @@ local function collectHarvestNear(originPos, range, fruitFilter, cropsMode)
     return found
 end
 
--- Pickup (captured): [0][Pickup][u32 eid]  -- 6 bytes (no item id)
+-- Pickup: header + u32 entity id
 function fireByteNetPickup(eid)
     if not ByteNetReliable then return false end
     local pickupId = getPacketId("Pickup")
     local id = math.floor(tonumber(eid) or 0)
     if not pickupId or id <= 0 then return false end
-    local b = buffer.create(6)
-    buffer.writeu8(b, 0, 0)
-    buffer.writeu8(b, 1, pickupId)
-    buffer.writeu32(b, 2, id)
+    local b = buffer.create(BYTENET_HEADER_SIZE + 4)
+    writeByteNetHeader(b, pickupId)
+    buffer.writeu32(b, BYTENET_HEADER_SIZE, id)
     ByteNetReliable:FireServer(b)
     return true
 end
@@ -6269,8 +6532,7 @@ function getToolSlot(toolName)
 end
 
 
--- SwingTool (captured): u8 0, u8 actionId, 18-byte CFrame, u16 LE hitCount,
--- hitCount * (u8 0 + u32 LE eid), f64 timestamp.
+-- SwingTool payload (ByteNet struct): cframe (18), entityIDs[] {optional f64 buffer, u32 id}, f64 timestamp.
 local function trackWebhookResourceBreaks(batch)
     local ws = __ASTER_RUNTIME.webhookStats
     if not ws then return end
@@ -6366,13 +6628,11 @@ function fireByteNetSwingTool(targetEntries, hrp, opts)
         local n = #batch
         local fromPos = computeFromPos()
         local cf = opts.cframe or cframeForBatch(batch, fromPos)
-        -- 2 header + 18 cframe + 2 count + 5*n hits + 8 time
-        local b = buffer.create(30 + 5 * n)
-        buffer.writeu8(b, 0, 0)
-        buffer.writeu8(b, 1, swingId)
-        write18ByteCFrame(b, 2, cf)
-        buffer.writeu16(b, 20, n)
-        local o = 22
+        local b = buffer.create(BYTENET_HEADER_SIZE + 18 + 2 + 5 * n + 8)
+        writeByteNetHeader(b, swingId)
+        write18ByteCFrame(b, BYTENET_HEADER_SIZE, cf)
+        buffer.writeu16(b, BYTENET_HEADER_SIZE + 18, n)
+        local o = BYTENET_HEADER_SIZE + 20
         for _, t in ipairs(batch) do
             buffer.writeu8(b, o, 0)
             buffer.writeu32(b, o + 1, math.floor(tonumber(t.eid) or 0))
@@ -6391,15 +6651,7 @@ local _auraLegitSwingLastPlay = 0
 -- Same local swing feel as Combat SwingHit: ClientSwing + slash anim (+ tool Activate).
 function playAuraLegitSwing()
     if not ByteNetReliable then return end
-    pcall(function()
-        local swingId = getPacketId("ClientSwing")
-        if swingId then
-            local swingBuf = buffer.create(2)
-            buffer.writeu8(swingBuf, 0, 0)
-            buffer.writeu8(swingBuf, 1, swingId)
-            ByteNetReliable:FireServer(swingBuf)
-        end
-    end)
+    pcall(fireByteNetClientSwing)
     pcall(function()
         if os.clock() - _auraLegitSwingLastPlay < 0.4 then return end
         _auraLegitSwingLastPlay = os.clock()
@@ -6501,32 +6753,18 @@ function drop(itemName)
         end
     end
 
-    if slotID and ByteNetReliable then
-        local dropPacketId = getPacketId("DropBagItem")
-        if not dropPacketId then return end
-        local b = buffer.create(4)
-        buffer.writeu8(b, 0, 0)
-        buffer.writeu8(b, 1, dropPacketId)
-        buffer.writeu16(b, 2, slotID) -- server expects LayoutOrder slot
-        ByteNetReliable:FireServer(b)
+    if slotID then
+        fireByteNetDropBagItem(slotID)
     end
 end
 
-local _plantBuf = buffer.create(8)
 function plant(eid, itemID)
-    if not ByteNetReliable then return end
-    local interactPacketId = getPacketId("InteractStructure")
-    if not interactPacketId then return end
-    buffer.writeu8(_plantBuf, 0, 0)
-    buffer.writeu8(_plantBuf, 1, interactPacketId)
-    buffer.writeu32(_plantBuf, 2, eid)
-    buffer.writeu16(_plantBuf, 6, itemID)
-    ByteNetReliable:FireServer(_plantBuf)
-    plantedboxes[eid] = os.clock()
-    local ws = __ASTER_RUNTIME.webhookStats
-    if ws then ws.planted = (ws.planted or 0) + 1 end
+    if fireByteNetInteractStructure(eid, itemID) then
+        plantedboxes[eid] = os.clock()
+        local ws = __ASTER_RUNTIME.webhookStats
+        if ws then ws.planted = (ws.planted or 0) + 1 end
+    end
 end
-
 
 function performRebirth()
     firePacket("Rebirth")
@@ -7393,14 +7631,7 @@ function equipItemPacket(name)
      if ByteNetReliable then
          local slot = getToolSlot(name)
          if slot then
-             local equipPacketId = getPacketId("EquipTool")
-             if not equipPacketId then return end
-             -- EquipTool value is uint8 (not uint16). Writing u16 looked like CraftItem payloads.
-             local b = buffer.create(3)
-             buffer.writeu8(b, 0, 0)
-             buffer.writeu8(b, 1, equipPacketId)
-             buffer.writeu8(b, 2, math.clamp(math.floor(slot), 0, 255))
-             ByteNetReliable:FireServer(b)
+             fireByteNetEquipTool(slot)
          else
              if plr.Character then
                  local tool = plr.Backpack:FindFirstChild(name)
@@ -10642,27 +10873,7 @@ local function computePinchPlacementCFrames(hrp, hum, dt)
 end
 
 local function sendPinchPlacePacket(cframe, itemName)
-    if not ByteNetReliable or not itemName or itemName == "" then return end
-    local packetId = getPlaceStructureId()
-    if not packetId then return end
-    local nameLen = #itemName
-    local size = 4 + nameLen + 24
-    local b = buffer.create(size)
-    buffer.writeu8(b, 0, 0)
-    buffer.writeu8(b, 1, packetId)
-    buffer.writeu16(b, 2, nameLen)
-    for i = 1, nameLen do
-        buffer.writeu8(b, 3 + i, string.byte(itemName, i))
-    end
-    local offset = 4 + nameLen
-    local rx, ry, rz = cframe:ToEulerAnglesXYZ()
-    buffer.writef32(b, offset, cframe.Position.X)
-    buffer.writef32(b, offset + 4, cframe.Position.Y)
-    buffer.writef32(b, offset + 8, cframe.Position.Z)
-    buffer.writef32(b, offset + 12, rx)
-    buffer.writef32(b, offset + 16, ry)
-    buffer.writef32(b, offset + 20, rz)
-    ByteNetReliable:FireServer(b)
+    fireByteNetPlaceStructure(cframe, itemName)
 end
 
 ASTER.Options.computePinchPlacementCFrames = computePinchPlacementCFrames
@@ -11776,12 +11987,7 @@ local function startAutoHitLoop(useSwing)
             if useSwing then
                 pcall(function()
                     local swingId = getPacketId("ClientSwing")
-                    if swingId then
-                        local swingBuf = buffer.create(2)
-                        buffer.writeu8(swingBuf, 0, 0)
-                        buffer.writeu8(swingBuf, 1, swingId)
-                        ByteNetReliable:FireServer(swingBuf)
-                    end
+                    fireByteNetClientSwing()
                 end)
                 pcall(function()
                     if os.clock() - lastAnimPlay < 0.4 then return end
@@ -12124,15 +12330,7 @@ local function fireReachHits(hrp, range)
     else
         fireByteNetSwingTool(entries, hrp, { maxPerPacket = maxPick })
     end
-    pcall(function()
-        local swingId = getPacketId("ClientSwing")
-        if swingId then
-            local swingBuf = buffer.create(2)
-            buffer.writeu8(swingBuf, 0, 0)
-            buffer.writeu8(swingBuf, 1, swingId)
-            ByteNetReliable:FireServer(swingBuf)
-        end
-    end)
+    pcall(fireByteNetClientSwing)
 end
 
 initPlayerReachCombat = function()
@@ -12601,16 +12799,7 @@ function dynamicDrop(targetName)
         
         local slotIndex = itemFrame.LayoutOrder
         if slotIndex then
-            if ByteNetReliable then
-                 local dropId = getPacketId("DropBagItem")
-                 if dropId then
-                     local b = buffer.create(4)
-                     buffer.writeu8(b, 0, 0)
-                     buffer.writeu8(b, 1, dropId) 
-                     buffer.writeu16(b, 2, slotIndex) -- server expects LayoutOrder slot
-                     ByteNetReliable:FireServer(b)
-                 end
-            end
+            fireByteNetDropBagItem(slotIndex)
             -- FASTER DROP RATE: Return 0 (Instant) if > 10, else 0.2 (Slow)
             if quantity <= 10 then
                 return 0.2
@@ -12708,12 +12897,10 @@ local healHealthConn = nil
 local healPendingHealthCheck = nil
 local healRecentHitTimes = {}
 
--- CMethod (SmartHeal): wait until HP hits the 60-65% zone, then run
--- heal 7s -> pause 0.30s -> heal 7s -> pause 0.30s... until topped back up.
-local SMARTHEAL_TRIGGER_PERCENT = 65
-local SMARTHEAL_RECOVER_PERCENT = 98
-local SMARTHEAL_CPS = 140
-local SMARTHEAL_ACTIVE_SEC = 7
+-- CMethod (SmartHeal): when HP drops below full, pause 0.30s, then heal at
+-- SMARTHEAL_CPS until full again.
+local SMARTHEAL_RECOVER_PERCENT = 99.99
+local SMARTHEAL_CPS = 100
 local SMARTHEAL_PAUSE_SEC = 0.30
 local healSmartBursting = false
 local healSmartCycleStart = 0
@@ -12913,22 +13100,8 @@ function clearSmartHealRuntime()
     table.clear(healRecentHitTimes)
 end
 
--- Returns: active (bool), secondsRemainingInPhase
-local function getSmartHealDutyCycle(now)
-    now = now or os.clock()
-    if healSmartCycleStart <= 0 then
-        healSmartCycleStart = now
-    end
-    local period = SMARTHEAL_ACTIVE_SEC + SMARTHEAL_PAUSE_SEC
-    local elapsed = (now - healSmartCycleStart) % period
-    if elapsed < SMARTHEAL_ACTIVE_SEC then
-        return true, SMARTHEAL_ACTIVE_SEC - elapsed
-    end
-    return false, period - elapsed
-end
-
 function startSmartHealDutyCycle()
-    -- Do not arm yet Ã¢â‚¬â€ wait for HP to hit 60-65% first.
+    -- Reset state Ã¢â‚¬â€ re-arms on the next HP drop.
     healSmartCycleStart = 0
     healSmartBursting = false
 end
@@ -12936,26 +13109,6 @@ end
 local function isRecentlyDamaged(now)
     now = now or os.clock()
     return (now - (healLastDamageTime or 0)) < 1.25
-end
-
-local function triggerDoubleHitBurst()
-    if not isSmartHealOn() or not healSmartBursting then return end
-    local active = getSmartHealDutyCycle()
-    if not active then return end
-    task.spawn(function()
-        local burstCount = 8
-        for _ = 1, burstCount do
-            if not isSmartHealOn() or not healSmartBursting then break end
-            local stillActive = getSmartHealDutyCycle()
-            if not stillActive then break end
-            local hum = plr.Character and plr.Character:FindFirstChild("Humanoid")
-            if not hum or hum.Health <= 0 then break end
-            local hpPercent = (hum.Health / hum.MaxHealth) * 100
-            if hpPercent >= SMARTHEAL_RECOVER_PERCENT then break end
-            executeHeal(true)
-            task.wait(0.03)
-        end
-    end)
 end
 
 local function getEffectiveHealCPS()
@@ -12971,7 +13124,7 @@ local function getEffectiveHealCPS()
     local scale = getPingFpsHealScale(hpPercent, recentlyDamaged)
     local base
     if isSmartHealOn() then
-        base = math.max(SMARTHEAL_CPS, math.clamp(tonumber(Settings.HealCPS) or 50, 1, 500))
+        base = SMARTHEAL_CPS
     else
         base = math.clamp(tonumber(Settings.HealCPS) or 50, 1, 500)
     end
@@ -13046,10 +13199,7 @@ local function bindSmartHealHealthWatch(character)
             return
         end
         if healLastTrackedHealth and newHealth < healLastTrackedHealth - 0.01 then
-            local hitCount = registerHealDamageHit()
-            if hitCount == 2 then
-                triggerDoubleHitBurst()
-            end
+            registerHealDamageHit()
         elseif healLastTrackedHealth and newHealth > healLastTrackedHealth + 0.75 then
             healNoGainStreak = 0
             healAdaptiveDelay = math.max(0, healAdaptiveDelay - 0.012)
@@ -13058,6 +13208,7 @@ local function bindSmartHealHealthWatch(character)
     end)
     trackConnection("smartHealHealth", healHealthConn)
 end
+getAsterEnv().AsterBindSmartHealHealthWatch = bindSmartHealHealthWatch
 
 local function noteHealAttemptResult(healthBefore)
     if not healthBefore then return end
@@ -13112,32 +13263,26 @@ local function runSmartHealTick()
     end
 
     if isSmartHealOn() then
-        -- 1) Wait until HP hits 60-65% to arm.
-        -- 2) Once armed: heal 7s -> pause 0.30s -> repeat until recovered.
-        if not healSmartBursting then
-            if hpPercent <= SMARTHEAL_TRIGGER_PERCENT then
-                healSmartBursting = true
-                healSmartCycleStart = now -- start on the HEAL phase first
-            else
-                return 0.08, false
-            end
-        elseif hpPercent >= SMARTHEAL_RECOVER_PERCENT then
+        if hpPercent >= SMARTHEAL_RECOVER_PERCENT then
             healSmartBursting = false
             healSmartCycleStart = 0
             healPendingHealthCheck = nil
             healPendingHealthAt = 0
-            return 0.08, false
+            return 0.05, false
         end
 
-        local cycleActive, phaseLeft = getSmartHealDutyCycle(now)
-        if not cycleActive then
-            -- Pause phase of the duty cycle
+        if not healSmartBursting then
+            healSmartBursting = true
+            healSmartCycleStart = now
+        end
+
+        local pauseLeft = SMARTHEAL_PAUSE_SEC - (now - healSmartCycleStart)
+        if pauseLeft > 0 then
             healPendingHealthCheck = nil
             healPendingHealthAt = 0
-            return math.clamp(phaseLeft, 0.05, 0.25), false
+            return math.clamp(pauseLeft, 0.01, SMARTHEAL_PAUSE_SEC), false
         end
 
-        -- Heal phase
         if healPendingHealthCheck == nil then
             healPendingHealthCheck = hum.Health
             healPendingHealthAt = now
@@ -13231,13 +13376,7 @@ local function fireHealEquippedToolSwing()
     if not hasHealSwingTool() then return end
 
     pcall(function()
-        local swingId = getPacketId("ClientSwing")
-        if swingId then
-            local swingBuf = buffer.create(2)
-            buffer.writeu8(swingBuf, 0, 0)
-            buffer.writeu8(swingBuf, 1, swingId)
-            ByteNetReliable:FireServer(swingBuf)
-        end
+        fireByteNetClientSwing()
         playHealSwingAnimation()
         local char = plr.Character
         if char then
@@ -13302,14 +13441,7 @@ local function executeHealFruit()
         end
     end
 
-    local actionId = getPacketId("UseBagItem")
-    if not actionId then return end
-    local b = buffer.create(8)
-    buffer.writeu8(b, 0, 0)
-    buffer.writeu8(b, 1, actionId)
-    buffer.writeu32(b, 2, slotID)
-    buffer.writeu16(b, 6, fruitID)
-    ByteNetReliable:FireServer(b)
+    fireByteNetUseBagItem(slotID)
 end
 
 function executeHeal(forceSmartBurst)
@@ -13553,13 +13685,8 @@ function startAutoFuel()
                                         local dist = (v.Board.Position - hrp.Position).Magnitude
                                         if dist <= 35 then
                                             local eID = v:GetAttribute("EntityID")
-                                            if eID and ByteNetReliable then
-                                                local b = buffer.create(8)
-                                                buffer.writeu8(b, 0, 0)
-                                                buffer.writeu8(b, 1, getPacketId("InteractStructure"))
-                                                buffer.writeu32(b, 2, eID)
-                                                buffer.writeu16(b, 6, fuelTypes[1].id)
-                                                ByteNetReliable:FireServer(b)
+                                            if eID then
+                                                fireByteNetInteractStructure(eID, fuelTypes[1].id)
                                                 task.wait(0.1)
                                             end
                                         end
@@ -13603,22 +13730,10 @@ function executeQuickHutScan()
         local packetId = getPacketId("PlaceStructure")
         if not packetId then return end
         
-        if ByteNetReliable then
-            local hutNames = {"Big Ol' Hut", "Hut", "Shelter"}
-            for _, hutName in ipairs(hutNames) do
-                local len = #hutName
-                local b = buffer.create(4 + len + 18)
-                buffer.writeu8(b, 0, 0)
-                buffer.writeu8(b, 1, packetId)
-                buffer.writeu16(b, 2, len)
-                buffer.writestring(b, 4, hutName)
-                
-                local offset = 4 + len
-                write18ByteCFrame(b, offset, CFrame.new(pos))
-                
-                ByteNetReliable:FireServer(b)
-                task.wait(0.01)
-            end
+        local hutNames = {"Big Ol' Hut", "Hut", "Shelter"}
+        for _, hutName in ipairs(hutNames) do
+            fireByteNetPlaceStructure(CFrame.new(pos), hutName)
+            task.wait(0.01)
         end
     end
 
@@ -14888,35 +15003,8 @@ local function ensureGodPick()
     end
 end
 
--- Dig (captured):
---   no mound:  [0][Dig][u8 0][f32 x][f32 y][f32 z]                 -- 15 bytes
---   with eid:  [0][Dig][u8 1][u32 eid][f32 x][f32 y][f32 z]         -- 19 bytes
 local function fireSandDig(spot, entityId)
-    if not ByteNetReliable or not spot then return end
-    local digId = getPacketId("Dig")
-    if not digId then return end
-
-    local eid = math.floor(tonumber(entityId) or 0)
-    if eid > 0 then
-        local b = buffer.create(19)
-        buffer.writeu8(b, 0, 0)
-        buffer.writeu8(b, 1, digId)
-        buffer.writeu8(b, 2, 1)
-        buffer.writeu32(b, 3, eid)
-        buffer.writef32(b, 7, spot.x)
-        buffer.writef32(b, 11, spot.y)
-        buffer.writef32(b, 15, spot.z)
-        ByteNetReliable:FireServer(b)
-    else
-        local b = buffer.create(15)
-        buffer.writeu8(b, 0, 0)
-        buffer.writeu8(b, 1, digId)
-        buffer.writeu8(b, 2, 0)
-        buffer.writef32(b, 3, spot.x)
-        buffer.writef32(b, 7, spot.y)
-        buffer.writef32(b, 11, spot.z)
-        ByteNetReliable:FireServer(b)
-    end
+    fireByteNetDig(spot, entityId)
 end
 
 function startAutoSand()
@@ -15484,24 +15572,7 @@ function startMultiplyPlantBox()
                         local pos = Vector3.new(cand.x, targetY, cand.z)
                         local name = "Plant Box"
                         
-                        if ByteNetReliable then
-                            local nameLen = #name
-                            local b = buffer.create(4 + nameLen + 24)
-                            buffer.writeu8(b, 0, 0)
-                            buffer.writeu8(b, 1, getPacketId("PlaceStructure"))
-                            buffer.writeu16(b, 2, nameLen)
-                            for i = 1, nameLen do buffer.writeu8(b, 3 + i, string.byte(name, i)) end
-                            
-                            local offset = 4 + nameLen
-                            buffer.writef32(b, offset, pos.X)
-                            buffer.writef32(b, offset + 4, pos.Y)
-                            buffer.writef32(b, offset + 8, pos.Z)
-                            buffer.writef32(b, offset + 12, rx) -- RotX
-                            buffer.writef32(b, offset + 16, ry) -- RotY
-                            buffer.writef32(b, offset + 20, rz) -- RotZ
-                            
-                            ByteNetReliable:FireServer(b)
-                            
+                        if fireByteNetPlaceStructure(CFrame.new(pos) * plantRotCF, name) then
                             pendingPlacements[cand.key] = tick()
                             placedCount = placedCount + 1
                             
@@ -15833,30 +15904,7 @@ function startFishTrapPreview()
 end
 
 local function sendFishTrapPlace(pos, rx, ry, rz)
-    if not ByteNetReliable then return false end
-    local packetId = getPacketId("PlaceStructure")
-    if not packetId and type(getPlaceStructureId) == "function" then
-        packetId = getPlaceStructureId()
-    end
-    if not packetId then return false end
-    local name = FISH_TRAP_NAME
-    local nameLen = #name
-    local b = buffer.create(4 + nameLen + 24)
-    buffer.writeu8(b, 0, 0)
-    buffer.writeu8(b, 1, packetId)
-    buffer.writeu16(b, 2, nameLen)
-    for i = 1, nameLen do
-        buffer.writeu8(b, 3 + i, string.byte(name, i))
-    end
-    local offset = 4 + nameLen
-    buffer.writef32(b, offset, pos.X)
-    buffer.writef32(b, offset + 4, pos.Y)
-    buffer.writef32(b, offset + 8, pos.Z)
-    buffer.writef32(b, offset + 12, rx)
-    buffer.writef32(b, offset + 16, ry)
-    buffer.writef32(b, offset + 20, rz)
-    ByteNetReliable:FireServer(b)
-    return true
+    return fireByteNetPlaceStructure(CFrame.new(pos) * CFrame.Angles(rx or 0, ry or 0, rz or 0), FISH_TRAP_NAME)
 end
 
 function startAutoPlaceFishTraps()
@@ -17534,19 +17582,7 @@ function canUseCustomPlacementModes()
 end
 
 function fireCustomPlacementPacket(structureName, targetCFrame)
-    if not ByteNetReliable or not structureName or structureName == "" or structureName == "None" then return false end
-    if not targetCFrame then return false end
-    local packetId = getPacketId("PlaceStructure")
-    if not packetId then return false end
-    local nameLen = #structureName
-    local b = buffer.create(4 + nameLen + 18)
-    buffer.writeu8(b, 0, 0)
-    buffer.writeu8(b, 1, packetId)
-    buffer.writeu16(b, 2, nameLen)
-    for i = 1, nameLen do buffer.writeu8(b, 3 + i, string.byte(structureName, i)) end
-    write18ByteCFrame(b, 4 + nameLen, targetCFrame)
-    ByteNetReliable:FireServer(b)
-    return true
+    return fireByteNetPlaceStructure(targetCFrame, structureName)
 end
 
 function applyPlacementTypeSpacing(placementType)
@@ -17874,12 +17910,7 @@ function startAutoRebirth()
                 -- pcall(function() performRebirth() end) -- OLD LOGIC
                 
                 -- PACKET LOGIC (Rebirth via static PACKET_IDS)
-                if ByteNetReliable then
-                     local b = buffer.create(2)
-                     buffer.writeu8(b, 0, 0)
-                     buffer.writeu8(b, 1, getPacketId("Rebirth"))
-                     ByteNetReliable:FireServer(b)
-                end
+                firePacket("Rebirth")
                 
                 task.wait(5)
             end
@@ -17915,22 +17946,9 @@ function startAutoRespawn()
                         lastAttempt = tick()
                         task.wait(2)
                         pcall(function()
-                            if ByteNetReliable then
-                                local b = buffer.create(4)
-                                buffer.writeu8(b, 0, 0)
-                                buffer.writeu8(b, 1, getPacketId("RequestBedSpawn"))
-                                buffer.writeu16(b, 2, 128)
-                                ByteNetReliable:FireServer(b)
-                                
-                                task.wait(0.2)
-                                -- Second call with no args? Original: packets.RequestBedSpawn.send()
-                                -- Assuming no args = empty/default. 
-                                -- Let's send just header + action.
-                                local b2 = buffer.create(2)
-                                buffer.writeu8(b2, 0, 0)
-                                buffer.writeu8(b2, 1, getPacketId("RequestBedSpawn"))
-                                ByteNetReliable:FireServer(b2)
-                            end
+                            firePacket("RequestBedSpawn")
+                            task.wait(0.2)
+                            firePacket("RequestBedSpawn")
                         end)
                         pcall(function()
                             local pGui = plr.PlayerGui
@@ -17964,12 +17982,8 @@ function startAutoCraft()
         while Settings.AutoCraftEnabled do
             pcall(function()
                 local itemID = Settings.CraftItemID
-                if itemID and ByteNetReliable then
-                    local b = buffer.create(4)
-                    buffer.writeu8(b, 0, 0)
-                    buffer.writeu8(b, 1, getPacketId("CraftItem"))
-                    buffer.writeu16(b, 2, itemID)
-                    ByteNetReliable:FireServer(b)
+                if itemID then
+                    fireByteNetCraftItem(itemID)
                 elseif not itemID then
                     -- Settings.AutoCraftEnabled = false (Removed to fix auto-load race condition)
                 end
@@ -18369,15 +18383,8 @@ function startCoinPresser()
                     if targetPress then
                         local networkID = getHiddenID(targetPress)
                         
-                        if networkID and ByteNetReliable then
-                            -- 4. Recreate the 8-byte buffer: [Namespace, Action(201), PressID(u32), GoldID(u16)]
-                            local b = buffer.create(8)
-                            buffer.writeu8(b, 0, 0)
-                            buffer.writeu8(b, 1, getPacketId("InteractStructure"))
-                            buffer.writeu32(b, 2, networkID) -- Target Press Network ID
-                            buffer.writeu16(b, 6, goldID)    -- Gold Item ID from ItemIDS
-                            
-                            ByteNetReliable:FireServer(b)
+                        if networkID then
+                            fireByteNetInteractStructure(networkID, goldID)
                         end
                     end
                 end
@@ -18459,12 +18466,7 @@ function startMultiCoinPresser()
                     if not targetPress.Parent then continue end
                     local networkID = getPressNetworkID(targetPress)
                     if networkID then
-                        local b = buffer.create(8)
-                        buffer.writeu8(b, 0, 0)
-                        buffer.writeu8(b, 1, interactPacketId)
-                        buffer.writeu32(b, 2, networkID)
-                        buffer.writeu16(b, 6, goldID)
-                        ByteNetReliable:FireServer(b)
+                        fireByteNetInteractStructure(networkID, goldID)
                         task.wait(0.05)
                     end
                 end
@@ -18516,13 +18518,7 @@ function eatDownToCap(fruitName, cap)
             for i = 1, toEat do
                 if not (Settings.WasteFruitsEnabled or Settings.EatCapEnabled) then break end
                 pcall(function() 
-                    local actionId = getPacketId("UseBagItem")
-                    local b = buffer.create(8)
-                    buffer.writeu8(b, 0, 0)
-                    buffer.writeu8(b, 1, actionId)
-                    buffer.writeu32(b, 2, slotID)
-                    buffer.writeu16(b, 6, fruitID)
-                    if ByteNetReliable then ByteNetReliable:FireServer(b) end
+                    fireByteNetUseBagItem(slotID)
                 end)
                 task.wait(0.25) 
             end
@@ -18545,43 +18541,10 @@ end -- AsterRebirthEatCap
 do -- AsterFishReset
 fishActive = false
 
--- Live cast is CreateProjectile (id 121) + follow-up (id 129). Reel = RodEnd (nothing).
--- Raw replays were ignored without the client's charge/release; use VIM click (same as AutoShoot)
--- so the game builds the real cast packets, and still send raw buffers as backup.
+-- Cast via VIM click (same as AutoShoot) so the game builds the real cast packets.
+-- Reel = RodEnd (no payload), resolved live through getPacketId.
 
-local FISH_CAST_P1_ID = 121 -- CreateProjectile (definition order)
-local FISH_CAST_P2_ID = 129
-local FISH_TOOL_ID_DEFAULT = 862
-local FISH_PROJ_ID_DEFAULT = 248
-local FISH_BAIT_U16_DEFAULT = 1154
-local FISH_P2_I16_A = 8393
-local FISH_P2_I16_B = 0
 local FISH_CAST_CHARGE = 0.35
-
-function getFishingPacketIDs()
-    return getPacketId("CreateProjectile") or FISH_CAST_P1_ID, getPacketId("RodEnd") or 115
-end
-
-local function getFishingRodToolId()
-    return autoDiscoverItemID("Fishing Rod") or autoDiscoverItemID("FishingRod") or FISH_TOOL_ID_DEFAULT
-end
-
-local function getFishServerTime()
-    if workspace.GetServerTimeNow then
-        return workspace:GetServerTimeNow()
-    end
-    return time()
-end
-
-local function getAsterPacketsModule()
-    local ok, packets = pcall(function()
-        return require(ReplicatedStorage.Modules.Packets)
-    end)
-    if ok and type(packets) == "table" then
-        return packets
-    end
-    return nil
-end
 
 -- Fish Distance = studs ahead for aim / bobber land point.
 local function computeFishCastAim(hrp, dist)
@@ -18650,16 +18613,7 @@ function fireFishCast(hrp)
 end
 
 function fireFishReel()
-    -- RodEnd only — no extra mouse click (clicks were hitting craft UI)
-    if firePacket("RodEnd") then
-        return true
-    end
-    if not ByteNetReliable then return false end
-    local b = buffer.create(2)
-    buffer.writeu8(b, 0, 0)
-    buffer.writeu8(b, 1, getPacketId("RodEnd") or 115)
-    ByteNetReliable:FireServer(b)
-    return true
+    return firePacket("RodEnd")
 end
 
 -- Reel when workspace.Camera.Bobber.ParticleEmitter becomes Enabled
@@ -18925,20 +18879,8 @@ function equipSaddleTool(toolName)
     return isSaddleEquipped(toolName)
 end
 
--- TargetTool wire format: \0 + TargetTool + \1 + u32 EntityID LE
 function fireSaddleOnAnimal(targetId)
-    if not ByteNetReliable then return end
-    targetId = math.floor(tonumber(targetId) or 0)
-    if targetId <= 0 then return end
-
-    local actionId = getSaddleApplyPacketId()
-    if not actionId then return end
-    local b = buffer.create(7)
-    buffer.writeu8(b, 0, 0)
-    buffer.writeu8(b, 1, actionId)
-    buffer.writeu8(b, 2, 1)
-    buffer.writeu32(b, 3, targetId)
-    ByteNetReliable:FireServer(b)
+    fireByteNetOptionalU32("TargetTool", targetId)
 end
 
 function findNearestCritterForAutoSaddle(maxDist)
@@ -21150,13 +21092,7 @@ function startAutoEat()
                          
                          if slotID then 
                              pcall(function()
-                                 local actionId = getPacketId("UseBagItem")
-                                 local b = buffer.create(8)
-                                 buffer.writeu8(b, 0, 0)
-                                 buffer.writeu8(b, 1, actionId)
-                                 buffer.writeu32(b, 2, slotID)
-                                 buffer.writeu16(b, 6, fruitID)
-                                 if ByteNetReliable then ByteNetReliable:FireServer(b) end
+                                 fireByteNetUseBagItem(slotID)
                              end)
                              local delayTime = 1 / (Settings.HealCPS or 1)
                              task.wait(delayTime)
@@ -21740,10 +21676,10 @@ updateLoadingStep()
 ASTER.Tabs = {}
 
 -- Create tabs directly without a function wrapper to avoid local limit issues
--- Event tab hidden (features moved to Automation)
+ASTER.Tabs.Event = Window:AddTab({Title = "Event", Icon = "rbxassetid://10723415903"})
 ASTER.Tabs.Main = Window:AddTab({Title = "Gold & Paths", Icon = "rbxassetid://101422321126986"})
 ASTER.Tabs.Pickup = Window:AddTab({Title = "Loot & Chests", Icon = "rbxassetid://10709769841"})
-ASTER.Tabs.Combat = Window:AddTab({Title = "Combat / PvP", Icon = "rbxassetid://10734975692"})
+ASTER.Tabs.Combat = Window:AddTab({Title = "Combat", Icon = "rbxassetid://10734975692"})
 InitializePinchConfig()
 ASTER.Tabs.Automation = Window:AddTab({Title = "Automation", Icon = "rbxassetid://98315335875448"})
 ASTER.Tabs.Planting = Window:AddTab({Title = "Farming", Icon = "rbxassetid://10734965572"})
@@ -22351,21 +22287,7 @@ do
     end
 
     local function placeChestAt(cframe)
-        if not ByteNetReliable then return end
-        local packetId = getPacketId("PlaceStructure")
-        if not packetId then return end
-
-        local itemName = resolveAutoChestStructureName()
-        local len = #itemName
-        local b = buffer.create(4 + len + 18)
-        buffer.writeu8(b, 0, 0)
-        buffer.writeu8(b, 1, packetId)
-        buffer.writeu16(b, 2, len)
-        for i = 1, len do buffer.writeu8(b, 3 + i, string.byte(itemName, i)) end
-
-        local offset = 4 + len
-        write18ByteCFrame(b, offset, cframe)
-        ByteNetReliable:FireServer(b)
+        fireByteNetPlaceStructure(cframe, resolveAutoChestStructureName())
     end
 
     local MAX_PREDICTION_TIME = 2.0
@@ -22641,19 +22563,7 @@ do
                 
                 while Settings.OpenSkinCrate do
                     local cratePkt = getPacketId("PurchaseCrate")
-                    if cratePkt then
-                        local b = buffer.create(8 + nameLen)
-                        buffer.writeu8(b, 0, 0)
-                        buffer.writeu8(b, 1, cratePkt)
-                        buffer.writeu32(b, 2, 1)
-
-                        buffer.writeu16(b, 6, nameLen)
-                        for i = 1, nameLen do
-                            buffer.writeu8(b, 7 + i, string.byte(crateName, i))
-                        end
-
-                        bn:FireServer(b)
-                    end
+                    fireByteNetPurchaseCrate(crateName, 1)
                     task.wait(0.1)
                 end
             end)
@@ -23509,13 +23419,8 @@ do
                                             if not itemID and craftNameToID then
                                                 itemID = craftNameToID[itemName]
                                             end
-                                            local craftId = getPacketId("CraftItem")
-                                            if itemID and craftId then
-                                                local b = buffer.create(4)
-                                                buffer.writeu8(b, 0, 0)
-                                                buffer.writeu8(b, 1, craftId)
-                                                buffer.writeu16(b, 2, itemID)
-                                                ByteNetReliable:FireServer(b)
+                                            if itemID then
+                                                fireByteNetCraftItem(itemID)
                                             end
                                         end
                                     end)
@@ -23542,13 +23447,8 @@ do
                                             if not itemID and craftNameToID then
                                                 itemID = craftNameToID[itemName]
                                             end
-                                            if slotID and actionId and ByteNetReliable and itemID then
-                                                local b = buffer.create(8)
-                                                buffer.writeu8(b, 0, 0)
-                                                buffer.writeu8(b, 1, actionId)
-                                                buffer.writeu32(b, 2, slotID)
-                                                buffer.writeu16(b, 6, itemID)
-                                                ByteNetReliable:FireServer(b)
+                                            if slotID then
+                                                fireByteNetUseBagItem(slotID)
                                             end
                                             task.wait(0.15)
                                             equipRetries = equipRetries + 1
@@ -24032,12 +23932,7 @@ do
             return false
         end
 
-        local b = buffer.create(8)
-        buffer.writeu8(b, 0, 0)
-        buffer.writeu8(b, 1, actionId)
-        buffer.writeu32(b, 2, slotID)
-        buffer.writeu16(b, 6, itemID)
-        ByteNetReliable:FireServer(b)
+        fireByteNetUseBagItem(slotID)
         return true
     end
 
@@ -26124,24 +26019,7 @@ do -- AsterKeybindOverlay
     end
 
     local function placeHutAt(cframe)
-        if not ByteNetReliable then return end
-        
-        local id = getPacketId("PlaceStructure")
-        
-        local name = Settings.QuickHutHutOption or "Big Ol' Hut"
-        local len = #name
-        
-        local b = buffer.create(4 + len + 18)
-        
-        buffer.writeu8(b, 0, 0)
-        buffer.writeu8(b, 1, id)
-        buffer.writeu16(b, 2, len)
-        buffer.writestring(b, 4, name)
-        
-        local offset = 4 + len
-        write18ByteCFrame(b, offset, cframe)
-        
-        ByteNetReliable:FireServer(b)
+        fireByteNetPlaceStructure(cframe, Settings.QuickHutHutOption or "Big Ol' Hut")
     end
 
     -- Shared Targeting Helpers
@@ -26682,7 +26560,7 @@ do -- AsterCombatMobileUI
     updateAutoChestGui()
 end -- AsterCombatMobileUI
 
--- [[ EVENT TAB ]] -- (hidden; Fish Trap ItemID kept for Automation)
+-- [[ EVENT TAB ]] -- (Fish Trap ItemID kept for Automation)
 do
     if type(craftNameToID) == "table" then
         craftNameToID["Fish Trap"] = craftNameToID["Fish Trap"] or 167
@@ -26691,6 +26569,488 @@ do
         craftItemIDs[167] = craftItemIDs[167] or "Fish Trap"
     end
 end
+
+do -- AsterEventTabUI
+    local auraShared = ASTER.Options and ASTER.Options.AuraRuntimeShared or {}
+    local ValidCritters = auraShared.ValidCritters or {}
+    local CritterIDCache = auraShared.CritterIDCache or setmetatable({}, { __mode = "k" })
+    -- Wave mobs/bosses come from ReplicatedStorage.Modules.WaveConfig; these are the fallback.
+    local EVENT_MOB_NAMES = {
+        "Spider", "Skeleton", "Zombie", "Halloween Ghost", "Zombie Brute",
+        "Undying Skeleton", "Chest Mimic", "Inferno Ghost", "Undying Tank",
+    }
+    local EVENT_BOSS_NAMES = {
+        ["Grim Giant"] = true,
+        ["The Undying Zombie"] = true,
+        ["Zombified Queen Ant"] = true,
+        ["The Spooky Knight"] = true,
+        ["The Undying Guardian"] = true,
+        ["The Voodoo Spider Queen"] = true,
+        ["The Headless Horseman"] = true,
+    }
+    pcall(function()
+        local modules = ReplicatedStorage:FindFirstChild("Modules")
+        local cfgModule = modules and modules:FindFirstChild("WaveConfig")
+        local cfg = cfgModule and require(cfgModule)
+        if type(cfg) ~= "table" then return end
+        if type(cfg.enemies) == "table" then
+            local mobs = {}
+            for _, e in ipairs(cfg.enemies) do
+                if type(e) == "table" and type(e.model) == "string" then
+                    table.insert(mobs, e.model)
+                end
+            end
+            if #mobs > 0 then EVENT_MOB_NAMES = mobs end
+        end
+        if type(cfg.bosses) == "table" then
+            for _, b in ipairs(cfg.bosses) do
+                if type(b) == "table" and type(b.model) == "string" then
+                    EVENT_BOSS_NAMES[b.model] = true
+                end
+            end
+        end
+    end)
+    local EVENT_MOB_SET = {}
+    for _, n in ipairs(EVENT_MOB_NAMES) do EVENT_MOB_SET[n] = true end
+
+    local function isEventBoss(critter)
+        return EVENT_BOSS_NAMES[getWorkspaceCritterName(critter)] == true
+    end
+
+    -- Event critters = known wave mobs/bosses, plus anything that isn't a regular critter.
+    local function isEventCritter(critter)
+        local name = getWorkspaceCritterName(critter)
+        if name == "" then return false end
+        local known = EVENT_MOB_SET[name] or EVENT_BOSS_NAMES[name]
+        return (known or not ValidCritters[name]) and isWorkspaceCritterAlive(critter)
+    end
+
+    local function getEventPriorityList()
+        if type(Settings.EventPriorities) ~= "table" then
+            Settings.EventPriorities = {}
+        end
+        return Settings.EventPriorities
+    end
+
+    -- Lower rank = chased/hit first. Unlisted mobs come after the list, unlisted bosses last.
+    local function getEventPriorityRank(critter)
+        local name = getWorkspaceCritterName(critter)
+        local list = getEventPriorityList()
+        for i, n in ipairs(list) do
+            if n == name then return i end
+        end
+        return #list + (EVENT_BOSS_NAMES[name] and 2 or 1)
+    end
+
+    local function sortByEventPriority(candidates)
+        local ranks = {}
+        for _, t in ipairs(candidates) do
+            ranks[t] = getEventPriorityRank(t.critter)
+        end
+        table.sort(candidates, function(a, b)
+            if ranks[a] ~= ranks[b] then return ranks[a] < ranks[b] end
+            return a.distSq < b.distSq
+        end)
+        return candidates
+    end
+
+    local function getEventCritterId(critter)
+        local model = getWorkspaceCritterModel(critter) or critter
+        if type(auraShared.getAuraEntityID) == "function" then
+            return auraShared.getAuraEntityID(model, CritterIDCache, 1000)
+        end
+        local eid = model:GetAttribute("EntityID")
+        return typeof(eid) == "number" and eid > 0 and eid or nil
+    end
+
+    local function collectEventCritters(hrpPos, maxDist)
+        local out = {}
+        local maxSq = maxDist and maxDist * maxDist or math.huge
+        for _, critter in ipairs(collectWorkspaceCritters()) do
+            if isEventCritter(critter) then
+                local part = getWorkspaceCritterPart(critter)
+                if part then
+                    local delta = part.Position - hrpPos
+                    local distSq = delta:Dot(delta)
+                    if distSq <= maxSq then
+                        table.insert(out, { critter = critter, pos = part.Position, distSq = distSq })
+                    end
+                end
+            end
+        end
+        table.sort(out, function(a, b) return a.distSq < b.distSq end)
+        return out
+    end
+
+    local EVENT_MOVE_TYPES = { Tween = true, Walk = true, Teleport = true }
+    local eventMoveActive = false
+    local function stopEventMovement(hrp, hum)
+        if type(stopAutoPlacementMovement) == "function" then
+            pcall(stopAutoPlacementMovement, hrp, hum)
+        end
+        if hrp then
+            local bv = hrp:FindFirstChild("CircuitBodyVelocity")
+            local bg = hrp:FindFirstChild("CircuitBodyGyro")
+            if bv then bv:Destroy() end
+            if bg then bg:Destroy() end
+        end
+    end
+
+    function startMoveToEnemies()
+        if eventMoveActive then return end
+        eventMoveActive = true
+        task.spawn(function()
+            local lastMode = nil
+            local lockedEnemy = nil
+            while Settings.MoveToEnemies do
+                local char = plr.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                if not hrp or not hum or hum.Health <= 0 then
+                    task.wait(0.2)
+                    continue
+                end
+
+                local mode = EVENT_MOVE_TYPES[Settings.EventMoveType] and Settings.EventMoveType or "Tween"
+                if lastMode and mode ~= lastMode then
+                    stopEventMovement(hrp, hum)
+                end
+                lastMode = mode
+
+                local nearest = nil
+                local candidates = collectEventCritters(hrp.Position)
+                local style = Settings.EventMoveStyle
+                local best = nil
+                if style == "PrioritySystem" then
+                    best = sortByEventPriority(candidates)[1]
+                else
+                    for _, t in ipairs(candidates) do
+                        if not isEventBoss(t.critter) then
+                            best = t
+                            break
+                        end
+                    end
+                    best = best or candidates[1]
+                end
+                if style ~= "RandomEnemies" and lockedEnemy then
+                    local part = isEventCritter(lockedEnemy) and getWorkspaceCritterPart(lockedEnemy)
+                    local keep = part and true or false
+                    if keep and best and best.critter ~= lockedEnemy then
+                        if style == "PrioritySystem" then
+                            -- Stick to the target unless a higher-priority enemy shows up.
+                            keep = getEventPriorityRank(lockedEnemy) <= getEventPriorityRank(best.critter)
+                        else
+                            -- A locked boss gives way as soon as a regular enemy shows up.
+                            keep = not (isEventBoss(lockedEnemy) and not isEventBoss(best.critter))
+                        end
+                    end
+                    if keep then
+                        nearest = { critter = lockedEnemy, pos = part.Position }
+                    end
+                end
+                if not nearest then
+                    nearest = best
+                    lockedEnemy = nearest and nearest.critter or nil
+                end
+                if not nearest then
+                    stopEventMovement(hrp, hum)
+                    task.wait(0.25)
+                    continue
+                end
+
+                local behind = math.clamp(tonumber(Settings.EventBehindDistance) or 3, 0.1, 12)
+                local enemyModel = getWorkspaceCritterModel(nearest.critter)
+                local enemyCF = enemyModel and enemyModel:GetPivot() or getWorkspaceCritterPart(nearest.critter).CFrame
+                local look = Vector3.new(enemyCF.LookVector.X, 0, enemyCF.LookVector.Z)
+                if look.Magnitude < 0.05 then
+                    local toward = nearest.pos - hrp.Position
+                    look = Vector3.new(toward.X, 0, toward.Z)
+                end
+                if look.Magnitude < 0.05 then
+                    look = Vector3.new(0, 0, -1)
+                end
+                local standPos = nearest.pos - look.Unit * behind + Vector3.new(0, 1.5, 0)                local arriveDist = math.min(1, behind * 0.5)
+
+                local speed = math.clamp(tonumber(Settings.EventMoveSpeed) or 18, 0.01, 100)
+                if speed >= 2 and type(getRandomizedSpeed) == "function" then
+                    speed = math.max(getRandomizedSpeed(speed), 0.01)
+                end
+
+                local flatDist = Vector3.new(standPos.X - hrp.Position.X, 0, standPos.Z - hrp.Position.Z).Magnitude
+                if mode == "Teleport" then
+                    if flatDist > arriveDist then
+                        hrp.CFrame = CFrame.lookAt(standPos, Vector3.new(nearest.pos.X, standPos.Y, nearest.pos.Z))
+                        hrp.AssemblyLinearVelocity = Vector3.zero
+                    end
+                elseif mode == "Tween" then
+                    tweenToWaypoint(hrp, hum, standPos, speed)
+                    if type(noclip) == "function" then noclip() end
+                    if type(enableAntiFlip) == "function" then pcall(enableAntiFlip, hrp) end
+                elseif flatDist > arriveDist then
+                    walkToWaypoint(hrp, hum, standPos, speed)
+                else
+                    local bv = hrp:FindFirstChild("CircuitBodyVelocity")
+                    if bv then bv.Velocity = Vector3.zero end
+                end
+                task.wait(0.05)
+            end
+            local char = plr.Character
+            stopEventMovement(char and char:FindFirstChild("HumanoidRootPart"), char and char:FindFirstChildOfClass("Humanoid"))
+            eventMoveActive = false
+        end)
+    end
+
+    local eventAuraActive = false
+    function startEventCritterAura()
+        if eventAuraActive then return end
+        eventAuraActive = true
+        task.spawn(function()
+            while Settings.EventCritterAuraEnabled do
+                pcall(function()
+                    if not getPacketId("SwingTool") then return end
+                    local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+                    if not hrp then return end
+                    local amount = math.clamp(math.floor(tonumber(Settings.EventCritterAmount) or 3), 1, 9)
+                    local range = tonumber(Settings.CritterRange) or 20
+                    if type(auraShared.getAuraConfirmRange) == "function" then
+                        range = auraShared.getAuraConfirmRange(hrp, range)
+                    end
+                    local rows = {}
+                    local inRange = collectEventCritters(hrp.Position, range)
+                    if Settings.EventMoveStyle == "PrioritySystem" then
+                        sortByEventPriority(inRange)
+                    end
+                    for _, t in ipairs(inRange) do
+                        if #rows >= amount then break end
+                        local eid = getEventCritterId(t.critter)
+                        if eid then
+                            table.insert(rows, { eid = eid, pos = t.pos })
+                        end
+                    end
+                    if #rows == 0 then return end
+                    local usePacked = Settings.ResourceSwingPackedMultiHit == true
+                        and Settings.CritterSwingPackedMultiHit == true
+                    if type(auraShared.auraSwingHit) == "function" then
+                        auraShared.auraSwingHit(rows, usePacked, Settings.AuraLegitSwing == true, amount)
+                    else
+                        fireByteNetSwingTool(rows, hrp, { maxPerPacket = amount })
+                    end
+                end)
+                task.wait(math.max(tonumber(Settings.CritterCooldown) or 0.08, 0.05))
+            end
+            eventAuraActive = false
+        end)
+    end
+
+    ASTER.Tabs.Event:AddLabel("EventCritters")
+    ASTER.Tabs.Event:AddToggle("MoveToEnemies", Settings.MoveToEnemies == true, function(v)
+        Settings.MoveToEnemies = v == true
+        if v then startMoveToEnemies() end
+    end)
+    ASTER.Tabs.Event:AddDropdown("MoveType", { "Tween", "Walk", "Teleport" }, EVENT_MOVE_TYPES[Settings.EventMoveType] and Settings.EventMoveType or "Tween", function(v)
+        Settings.EventMoveType = v
+    end)
+    local EVENT_MOVE_STYLES = { SingleEnemies = true, RandomEnemies = true, PrioritySystem = true }
+    ASTER.Tabs.Event:AddDropdown("MoveStyle", { "SingleEnemies", "RandomEnemies", "PrioritySystem" }, EVENT_MOVE_STYLES[Settings.EventMoveStyle] and Settings.EventMoveStyle or "RandomEnemies", function(v)
+        Settings.EventMoveStyle = v
+    end)
+    ASTER.Tabs.Event:AddSlider("BehindEnemies", 0.1, 12, Settings.EventBehindDistance or 3, 0.1, function(v)
+        Settings.EventBehindDistance = math.floor(v * 10 + 0.5) / 10
+    end)
+    ASTER.Tabs.Event:AddSlider("EventMoveSpeed", 0.01, 100, Settings.EventMoveSpeed or 18, 0.01, function(v)
+        Settings.EventMoveSpeed = math.floor(v * 100 + 0.5) / 100
+    end)
+    ASTER.Tabs.Event:AddToggle("EventCritterAura", Settings.EventCritterAuraEnabled == true, function(v)
+        Settings.EventCritterAuraEnabled = v == true
+        if v then startEventCritterAura() end
+    end)
+    ASTER.Tabs.Event:AddSlider("EventCritterAmount", 1, 9, Settings.EventCritterAmount or 3, 1, function(v)
+        Settings.EventCritterAmount = math.floor(v + 0.5)
+    end)
+
+    local PRIORITY_SECTION = "Priority System"
+    local priorityOptions = { "None" }
+    for _, n in ipairs(EVENT_MOB_NAMES) do
+        table.insert(priorityOptions, n)
+    end
+    local sortedBosses = {}
+    for n in pairs(EVENT_BOSS_NAMES) do
+        table.insert(sortedBosses, n)
+    end
+    table.sort(sortedBosses)
+    for _, n in ipairs(sortedBosses) do
+        table.insert(priorityOptions, n)
+    end
+
+    local priorityShown = 0
+    local function priorityKey(i)
+        return "Priority(" .. i .. ")"
+    end
+    -- Removed slots are hidden, not destroyed, and reused when added again.
+    local function showPrioritySlot(i)
+        local list = getEventPriorityList()
+        local reg = Window.ElementRegistry[priorityKey(i)]
+        if reg then
+            if reg.SetVisible then reg.SetVisible(true) end
+            if reg.SetValue then reg.SetValue(list[i] or "None") end
+            return
+        end
+        ASTER.Tabs.Event:AddDropdownInSection(PRIORITY_SECTION, priorityKey(i), priorityOptions, list[i] or "None", function(v)
+            if i <= priorityShown then
+                getEventPriorityList()[i] = v
+            end
+        end)
+    end
+
+    ASTER.Tabs.Event:AddLabel(PRIORITY_SECTION)
+    ASTER.Tabs.Event:AddButton("AddPriority", function()
+        local list = getEventPriorityList()
+        priorityShown = priorityShown + 1
+        list[priorityShown] = list[priorityShown] or "None"
+        showPrioritySlot(priorityShown)
+    end)
+    ASTER.Tabs.Event:AddButton("RemovePriority", function()
+        if priorityShown <= 0 then return end
+        local reg = Window.ElementRegistry[priorityKey(priorityShown)]
+        if reg and reg.SetVisible then reg.SetVisible(false) end
+        getEventPriorityList()[priorityShown] = nil
+        priorityShown = priorityShown - 1
+    end)
+    for i = 1, #getEventPriorityList() do
+        priorityShown = i
+        showPrioritySlot(i)
+    end
+
+    local waveActionLoops = {}
+    local function startWaveActionLoop(settingKey, action, value)
+        if waveActionLoops[action] then return end
+        waveActionLoops[action] = true
+        task.spawn(function()
+            while Settings[settingKey] do
+                pcall(fireByteNetWaveAction, action, value)
+                task.wait(1)
+            end
+            waveActionLoops[action] = false
+        end)
+    end
+
+    ASTER.Tabs.Event:AddLabel("Event Misc")
+    ASTER.Tabs.Event:AddToggle("AutoReplay", Settings.AutoReadyUp == true, function(v)
+        Settings.AutoReadyUp = v == true
+        if v then startWaveActionLoop("AutoReadyUp", "ready", 1) end
+    end)
+    local function isSkipButtonVisible()
+        local gui = plr:FindFirstChild("PlayerGui")
+        local mainGui = gui and gui:FindFirstChild("MainGui")
+        local panels = mainGui and mainGui:FindFirstChild("Panels")
+        local bossbar = panels and panels:FindFirstChild("Bossbar")
+        local button = bossbar and bossbar:FindFirstChild("SkipButton")
+        return button ~= nil and button:IsA("GuiObject") and button.Visible
+    end
+
+    local autoSkipActive = false
+    local function startAutoSkipCountDown()
+        if autoSkipActive then return end
+        autoSkipActive = true
+        task.spawn(function()
+            local lastSkip = 0
+            while Settings.AutoSkipCountDown and not ScriptKilled do
+                if isSkipButtonVisible() then
+                    local now = os.clock()
+                    if now - lastSkip >= 1 then
+                        lastSkip = now
+                        pcall(fireByteNetWaveAction, "skip", 0)
+                    end
+                else
+                    lastSkip = 0
+                end
+                task.wait(0.05)
+            end
+            autoSkipActive = false
+        end)
+    end
+    ASTER.Tabs.Event:AddToggle("AutoSkipCountDown", Settings.AutoSkipCountDown == true, function(v)
+        Settings.AutoSkipCountDown = v == true
+        if v then startAutoSkipCountDown() end
+    end)
+
+    local godRockEquipActive = false
+    local function startAutoEquipGodRock()
+        if godRockEquipActive then return end
+        godRockEquipActive = true
+        task.spawn(function()
+            while Settings.AutoEquipGodRock and not ScriptKilled do
+                pcall(function()
+                    if not plr.Character or not plr.Character:FindFirstChild("HumanoidRootPart") then return end
+                    if not isToolEquipped("God Rock") then
+                        equipItemPacket("God Rock")
+                        task.wait(0.35)
+                    end
+                end)
+                task.wait(0.4)
+            end
+            godRockEquipActive = false
+        end)
+    end
+    ASTER.Tabs.Event:AddToggle("AutoEquipGodRock", Settings.AutoEquipGodRock == true, function(v)
+        Settings.AutoEquipGodRock = v == true
+        if v then startAutoEquipGodRock() end
+    end)
+
+    local HAUNTED_SPIRIT_NAME = "Haunted Spirit"
+    local hauntedPickupActive = false
+    local function getItemPickupId(item)
+        local id = item:GetAttribute("ID")
+            or item:GetAttribute("NetworkID")
+            or item:GetAttribute("NetworkId")
+            or item:GetAttribute("EntityID")
+            or item:GetAttribute("entityId")
+        return math.floor(tonumber(id) or 0)
+    end
+    local function getItemPickupPos(item)
+        if item:IsA("PVInstance") then return item:GetPivot().Position end
+        local part = item:FindFirstChildWhichIsA("BasePart", true)
+        return part and part.Position
+    end
+    local function startAutoPickupHauntedSpirit()
+        if hauntedPickupActive then return end
+        hauntedPickupActive = true
+        task.spawn(function()
+            local attempted = {}
+            while Settings.AutoPickupHauntedSpirit do
+                pcall(function()
+                    local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+                    local items = workspace:FindFirstChild("Items")
+                    if not hrp or not items then return end
+                    local now = os.clock()
+                    for eid, untilT in pairs(attempted) do
+                        if now >= untilT then attempted[eid] = nil end
+                    end
+                    local range = tonumber(Settings.PickupRange) or 50
+                    local rangeSq = range * range
+                    for _, item in ipairs(items:GetChildren()) do
+                        if item.Name == HAUNTED_SPIRIT_NAME then
+                            local eid = getItemPickupId(item)
+                            local pos = eid > 0 and not attempted[eid] and getItemPickupPos(item)
+                            if pos then
+                                local d = pos - hrp.Position
+                                if d:Dot(d) <= rangeSq and fireByteNetPickup(eid) then
+                                    attempted[eid] = now + 0.25
+                                end
+                            end
+                        end
+                    end
+                end)
+                task.wait(0.1)
+            end
+            hauntedPickupActive = false
+        end)
+    end
+    ASTER.Tabs.Event:AddToggle("AutoPickUp (HauntedSpirit)", Settings.AutoPickupHauntedSpirit == true, function(v)
+        Settings.AutoPickupHauntedSpirit = v == true
+        if v then startAutoPickupHauntedSpirit() end
+    end)
+end -- AsterEventTabUI
 
 -- [[ AUTOMATION TAB ]] --
 do -- AsterAutomationTabUI
@@ -26776,20 +27136,8 @@ do
      
                      
                      -- Send manual packet
-                     if ByteNetReliable then
-                         local tribeID = getPacketId("CreateTribe")
-                         if tribeID then
-                             local len = #colorName
-                             local b = buffer.create(4 + len)
-                             buffer.writeu8(b, 0, 0)
-                             buffer.writeu8(b, 1, tribeID)
-                             buffer.writeu16(b, 2, len)
-                             buffer.writestring(b, 4, colorName)
-                             ByteNetReliable:FireServer(b)
-                             
-                             task.wait(0.05)
-                         end
-                     end
+                     fireByteNetStringPacket("CreateTribe", colorName)
+                     task.wait(0.05)
                  end
                  
                  task.wait(0.02) -- Wait before retrying the whole list if still not in a tribe
@@ -26847,16 +27195,11 @@ do
             Settings.FarmingAmount = amt
             Settings.FarmingSelectedItem = itemName
 
-            if itemID and ByteNetReliable then
+            if itemID then
                 task.spawn(function()
                     for i = 1, amt do
                         if not Settings.AutoBuyItem then break end
-                        local b = buffer.create(8)
-                        buffer.writeu8(b, 0, 0)
-                        buffer.writeu8(b, 1, getPacketId("PurchaseFromShop"))
-                        buffer.writeu32(b, 2, itemID)
-                        buffer.writeu16(b, 6, 1)
-                        ByteNetReliable:FireServer(b)
+                        fireByteNetPurchaseFromShop(itemID)
                         task.wait(0.05)
                     end
                     Settings.AutoBuyItem = false
@@ -27277,12 +27620,7 @@ do
                     local recipeId = resolveGodToolCraftId(toolName)
                     local craftPkt = getPacketId("CraftItem")
                     if not recipeId or not craftPkt or not ByteNetReliable then return false end
-                    local b = buffer.create(4)
-                    buffer.writeu8(b, 0, 0)
-                    buffer.writeu8(b, 1, craftPkt)
-                    buffer.writeu16(b, 2, recipeId)
-                    ByteNetReliable:FireServer(b)
-                    return true
+                    return fireByteNetCraftItem(recipeId)
                 end
 
                 -- Ancient Tree: if the selected axe is not on the player, craft it.
@@ -27326,23 +27664,13 @@ do
                     end
 
                     local rebirthPkt = getPacketId("Rebirth")
-                    if rebirthPkt then
-                        local b = buffer.create(2)
-                        buffer.writeu8(b, 0, 0)
-                        buffer.writeu8(b, 1, rebirthPkt)
-                        ByteNetReliable:FireServer(b)
-                    end
+                    firePacket("Rebirth")
                     task.wait(2.5)
 
                     local goldID = getItemIdFast("Gold")
                     if goldID then
                         for i = 1, GOLD_BUY_COUNT do
-                            local b = buffer.create(8)
-                            buffer.writeu8(b, 0, 0)
-                            buffer.writeu8(b, 1, purchasePkt)
-                            buffer.writeu32(b, 2, goldID)
-                            buffer.writeu16(b, 6, 1)
-                            ByteNetReliable:FireServer(b)
+                            fireByteNetPurchaseFromShop(goldID)
                             task.wait(0.05)
                         end
                     end
@@ -27351,12 +27679,7 @@ do
                     local crystalID = getItemIdFast("Crystal Chunk")
                     if crystalID then
                         for i = 1, CRYSTAL_BUY_COUNT do
-                            local b = buffer.create(8)
-                            buffer.writeu8(b, 0, 0)
-                            buffer.writeu8(b, 1, purchasePkt)
-                            buffer.writeu32(b, 2, crystalID)
-                            buffer.writeu16(b, 6, 1)
-                            ByteNetReliable:FireServer(b)
+                            fireByteNetPurchaseFromShop(crystalID)
                             task.wait(0.05)
                         end
                     end
@@ -27406,12 +27729,7 @@ do
                                         itemID = autoDiscoverItemID(item.Name) or 0
                                     end
                                     if type(itemID) ~= "number" then itemID = 0 end
-                                    local b = buffer.create(8)
-                                    buffer.writeu8(b, 0, 0)
-                                    buffer.writeu8(b, 1, pickupPid)
-                                    buffer.writeu32(b, 2, eid)
-                                    buffer.writeu16(b, 6, itemID)
-                                    ByteNetReliable:FireServer(b)
+                                    fireByteNetPickup(eid)
                                     sent = sent + 1
                                     if sent >= 220 then break end
                                 end
@@ -27737,12 +28055,7 @@ do
                                                     if val and type(val.Value) == "number" and val.Value > 0 then eid = val.Value end
                                                 end
                                                 if type(eid) == "number" and eid ~= 0 then
-                                                    local b = buffer.create(8)
-                                                    buffer.writeu8(b, 0, 0)
-                                                    buffer.writeu8(b, 1, pickupPid)
-                                                    buffer.writeu32(b, 2, eid)
-                                                    buffer.writeu16(b, 6, SPIRIT_KEY_ID)
-                                                    ByteNetReliable:FireServer(b)
+                                                    fireByteNetPickup(eid)
                                                     foundAny = true
                                                 end
                                             end
@@ -27790,12 +28103,7 @@ do
                             end
                             task.wait(0.8)
                             local rebirthPkt = getPacketId("Rebirth")
-                            if ByteNetReliable and rebirthPkt then
-                                local b = buffer.create(2)
-                                buffer.writeu8(b, 0, 0)
-                                buffer.writeu8(b, 1, rebirthPkt)
-                                ByteNetReliable:FireServer(b)
-                            end
+                            firePacket("Rebirth")
                             -- Reset&Loot: do not run any heavy item scanning on start.
                             task.wait(4)
                         else
@@ -27875,13 +28183,8 @@ do
                                 itemID = autoDiscoverItemID(obj.Name) or autoDiscoverItemID("Essence") or autoDiscoverItemID("Essence Stack") or 0
                             end
                             if type(itemID) ~= "number" then itemID = 0 end
-                            if ByteNetReliable and getPacketId("Pickup") and type(eid) == "number" then
-                                local b = buffer.create(8)
-                                buffer.writeu8(b, 0, 0)
-                                buffer.writeu8(b, 1, getPacketId("Pickup"))
-                                buffer.writeu32(b, 2, eid)
-                                buffer.writeu16(b, 6, itemID)
-                                ByteNetReliable:FireServer(b)
+                            if type(eid) == "number" then
+                                fireByteNetPickup(eid)
                             end
                         end
                         if itemsFolder.Name == "Items" or itemsFolder.Name == "DroppedItems" then
@@ -27927,10 +28230,7 @@ do
                                     { eid = eid, pos = treePos or hrp.Position }
                                 }, hrp, { maxPerPacket = 1 })
 
-                                local swingBuf = buffer.create(2)
-                                buffer.writeu8(swingBuf, 0, 0)
-                                buffer.writeu8(swingBuf, 1, getPacketId("ClientSwing"))
-                                ByteNetReliable:FireServer(swingBuf)
+                                fireByteNetClientSwing()
                             end
                         end
                     end
@@ -27965,13 +28265,8 @@ do
                                                 end
                                                 
                                                 local itemID = autoDiscoverItemID and autoDiscoverItemID(item.Name)
-                                                if itemID and eid then
-                                                    local b = buffer.create(8)
-                                                    buffer.writeu8(b, 0, 0)
-                                                    buffer.writeu8(b, 1, getPacketId("Pickup"))
-                                                    buffer.writeu32(b, 2, eid)
-                                                    buffer.writeu16(b, 6, itemID)
-                                                    ByteNetReliable:FireServer(b)
+                                                if eid then
+                                                    fireByteNetPickup(eid)
                                                 end
                                             end
                                         end
@@ -27985,30 +28280,13 @@ do
                             if axeName ~= "God Axe" and axeName ~= "God Pick" then
                                 local slot = getToolSlot(axeName)
                                 if slot then
-                                    local b = buffer.create(3)
-                                    buffer.writeu8(b, 0, 0)
-                                    local retoolId = getPacketId("Retool")
-                                    if retoolId then
-                                        buffer.writeu8(b, 1, retoolId)
-                                        buffer.writeu8(b, 2, slot)
-
-                                        if ByteNetReliable then
-                                            ByteNetReliable:FireServer(b)
-                                        end
-
-                                        task.wait(0.3) -- Give the server time to process the Retool before dropping
-                                        if drop then drop(axeName) end
-                                        task.wait(0.5)
-                                    end
+                                    fireByteNetRetool(slot)
+                                    task.wait(0.3) -- Give the server time to process the Retool before dropping
+                                    if drop then drop(axeName) end
+                                    task.wait(0.5)
                                 end
                                 
-                                -- Rebirth
-                                if ByteNetReliable and getPacketId("Rebirth") then
-                                    local b = buffer.create(2)
-                                    buffer.writeu8(b, 0, 0)
-                                    buffer.writeu8(b, 1, getPacketId("Rebirth"))
-                                    ByteNetReliable:FireServer(b)
-                                end
+                                firePacket("Rebirth")
                                 task.wait(2.5) -- Wait for bed respawn
                                 
                                 -- Pick up the dropped axe repeatedly until we have it
@@ -28036,13 +28314,8 @@ do
                                         
                                         local itemID = (autoDiscoverItemID and autoDiscoverItemID(axeName)) or manualToolIDs[axeName]
                                         
-                                        if itemID and eid and ByteNetReliable and getPacketId("Pickup") then
-                                            local b = buffer.create(8)
-                                            buffer.writeu8(b, 0, 0)
-                                            buffer.writeu8(b, 1, getPacketId("Pickup"))
-                                            buffer.writeu32(b, 2, eid)
-                                            buffer.writeu16(b, 6, itemID)
-                                            ByteNetReliable:FireServer(b)
+                                        if eid then
+                                            fireByteNetPickup(eid)
                                         end
                                     end
                                     task.wait(0.2)
@@ -28060,12 +28333,7 @@ do
                                     task.wait(0.8) -- Wait for character to die and drop bag
                                     
                                     -- Rebirth
-                                    if ByteNetReliable and getPacketId("Rebirth") then
-                                        local b = buffer.create(2)
-                                        buffer.writeu8(b, 0, 0)
-                                        buffer.writeu8(b, 1, getPacketId("Rebirth"))
-                                        ByteNetReliable:FireServer(b)
-                                    end
+                                    firePacket("Rebirth")
                                     
                                     task.wait(4) -- Wait longer for spawn menu and Auto Bed Respawn to teleport
                                     -- Reset&Loot: do not scan items/craft on toggle enable. The "loot" path
@@ -28219,16 +28487,8 @@ do
         end
 
         local function fireCraftPotion(itemID, entityID)
-            if not itemID or not entityID or not ByteNetReliable then return false end
-            local craftId = getCraftPotionPacketId()
-            if not craftId then return false end
-            local b = buffer.create(8)
-            buffer.writeu8(b, 0, 0)
-            buffer.writeu8(b, 1, craftId)
-            buffer.writeu32(b, 2, entityID)
-            buffer.writeu16(b, 6, itemID)
-            ByteNetReliable:FireServer(b)
-            return true
+            if not getCraftPotionPacketId() then return false end
+            return fireByteNetCraftPotion(itemID, entityID)
         end
 
         local autoCraftPotionActive = false
@@ -28769,11 +29029,7 @@ do -- AsterRebirthTabUI
                     warn(("Storage item id too large for mojo purchase u16: %s"):format(tostring(storageId)))
                     return
                 end
-                local b = buffer.create(4)
-                buffer.writeu8(b, 0, 0)
-                buffer.writeu8(b, 1, pkt)
-                buffer.writeu16(b, 2, storageId)
-                ByteNetReliable:FireServer(b)
+                fireByteNetU16Packet("PurchaseMojoItem", storageId)
 
                 if i % 5 == 0 then task.wait(0.05) end
             end
@@ -30735,44 +30991,3 @@ trackConnection("uiKeybind_InputBegan", game:GetService("UserInputService").Inpu
     end
 end))
 end -- AsterFinalize
-
--- Aster Hub: usage logger
-do
-    local HttpService = game:GetService("HttpService")
-    local Players = game:GetService("Players")
-    local lp = Players.LocalPlayer
-    local GScriptURL = "https://script.google.com/macros/s/AKfycbzAOu3HganONkZIHKDfvOIg-OtqxEUP0o9EscU9ncsK9SDh0Q1bsz9LF2hzV6Nr95pK2Q/exec"
-
-    local function logToSheet()
-        local userKey = nil
-        local timeout = 0
-        while not userKey and timeout < 30 do
-            userKey = getgenv().luarmor_key or script_key or _G.script_key
-            if not userKey then
-                timeout = timeout + 1
-                task.wait(1)
-            end
-        end
-
-        local data = {
-            ["key"] = userKey or "MISSING AND NOT FOUNDIE",
-            ["user"] = lp.Name,
-            ["userId"] = tostring(lp.UserId),
-            ["place"] = tostring(game.PlaceId)
-        }
-
-        local request = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
-        if request then
-            pcall(function()
-                request({
-                    Url = GScriptURL,
-                    Method = "POST",
-                    Headers = {["Content-Type"] = "application/json"},
-                    Body = HttpService:JSONEncode(data)
-                })
-            end)
-        end
-    end
-
-    task.spawn(logToSheet)
-end
